@@ -16,6 +16,8 @@ RUN npm ci
 COPY src/frontend/ ./
 # Widget JS uses window.location.origin at runtime when VITE_*
 # env vars are absent — no build-time URL needed.
+# VITE_BASE_PATH=/widget/ so built HTML references /widget/assets/*.
+ENV VITE_BASE_PATH=/widget/
 RUN npx tsc && npx vite build
 
 # ── Backend builder (compiles TypeScript for production) ───────

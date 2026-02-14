@@ -13,6 +13,9 @@ const BACKEND_ORIGIN =
 const WIDGET_HOST = process.env.VITE_WIDGET_HOST ?? '127.0.0.1';
 
 export default defineConfig({
+  // In production the widget SPA is served at /widget/ by the backend.
+  // During local dev it runs at root /.
+  base: process.env.VITE_BASE_PATH ?? '/',
   plugins: [react()],
   server: {
     port: 5173,
