@@ -59,6 +59,8 @@ const MOCK_TENANT: Tenant = {
   slug: 'gomomo',
   timezone: 'America/New_York',
   slot_duration: 30,
+  service_description: 'AI-powered scheduling and appointment management',
+  service_catalog_mode: 'catalog_only',
   business_hours: {
     monday: { start: '09:00', end: '17:00' },
     tuesday: { start: '09:00', end: '17:00' },
