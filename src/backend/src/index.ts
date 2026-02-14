@@ -2,7 +2,10 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import formbody from '@fastify/formbody';
 import helmet from '@fastify/helmet';
+import fastifyStatic from '@fastify/static';
 import { Server } from 'socket.io';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { env } from './config/env.js';
 import { getCorsOptions, getSocketIoCorsOptions, logCorsPolicy } from './config/cors.js';
 import { registerHttpsEnforcement, logHttpsPolicy } from './config/https.js';
@@ -193,9 +196,10 @@ async function main(): Promise<void> {
 
   // 3c. HTTP security headers (helmet)
   //     - CSP kept loose for dev (Vite HMR via ws:) and Socket.IO
-  //     - X-Frame-Options DENY (API-only server, never framed)
+  //     - frame-ancestors: allow CORS_ORIGIN to embed /widget in an iframe
   //     - X-Content-Type-Options nosniff
   //     - Referrer-Policy no-referrer
+  const frameAncestors = ["'self'", ...env.CORS_ORIGIN.split(',').map(s => s.trim()).filter(Boolean)];
   await app.register(helmet, {
     contentSecurityPolicy: {
       directives: {
@@ -204,8 +208,12 @@ async function main(): Promise<void> {
         connectSrc: ["'self'", 'ws:', 'wss:'],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
+        frameAncestors,
       },
     },
+    // CSP frame-ancestors supersedes X-Frame-Options; disable the
+    // legacy header so the two don't conflict.
+    frameguard: false,
     // Allow cross-origin requests (CORS handles this)
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
@@ -213,6 +221,29 @@ async function main(): Promise<void> {
   // 3d. HTTPS enforcement (must run before route handlers)
   registerHttpsEnforcement(app);
   logHttpsPolicy();
+
+  // 3e. Serve the widget SPA as static files at /widget/*
+  //     The built Vite output lives in <rootDir>/widget/ inside the
+  //     Docker image (COPY'd during build).  In local dev the path
+  //     resolves to dist/widget/ relative to the compiled JS.
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const widgetRoot = join(__dirname, '..', 'widget');
+  await app.register(fastifyStatic, {
+    root: widgetRoot,
+    prefix: '/widget/',
+    decorateReply: false,          // avoid conflict if registered elsewhere
+    wildcard: false,               // we handle SPA fallback below
+  });
+  // SPA fallback: any /widget/* path that doesn't match a real file
+  // returns /widget/index.html so client-side routing works.
+  app.setNotFoundHandler(async (request, reply) => {
+    if (request.url.startsWith('/widget')) {
+      return reply.sendFile('index.html', widgetRoot);
+    }
+    reply.code(404).send({ error: 'Not Found' });
+  });
+  console.log(`📦 Widget SPA served at /widget/ from ${widgetRoot}`);
 
   // 4. Health check (public) — includes capability snapshot
   app.get('/health', { preHandler: markPublic }, async () => ({
@@ -485,6 +516,8 @@ async function main(): Promise<void> {
   app.addHook('onSend', async (request, reply, payload) => {
     // Route was tagged by an auth preHandler — allow through
     if ((request as any)[AUTH_TAG_KEY]) return payload;
+    // Widget static assets are public (served by @fastify/static)
+    if (request.url.startsWith('/widget')) return payload;
     // Auth enforcement not on — allow through
     if (!isAuthEnforced()) return payload;
 

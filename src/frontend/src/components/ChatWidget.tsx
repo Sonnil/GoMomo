@@ -40,8 +40,8 @@ interface ChatWidgetProps {
   onPendingMessageConsumed?: () => void;
 }
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3000';
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const WS_URL = import.meta.env.VITE_WS_URL || window.location.origin;
+const API_URL = import.meta.env.VITE_API_URL || window.location.origin;
 
 /* ── Follow-up Detection ────────────────────────────────── */
 function isFollowupMessage(text: string): boolean {

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start -p 3001",
+    "start": "node -e \"process.exit(require('child_process').spawnSync('next',['start','-p',process.env.PORT||'3001'],{stdio:'inherit'}).status)\"",
     "lint": "next lint"
   },
   "dependencies": {

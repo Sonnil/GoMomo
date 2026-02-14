@@ -8,6 +8,9 @@ import { useChatPopup } from './ChatPopupContext';
 const WIDGET_BASE = process.env.NEXT_PUBLIC_WIDGET_URL || 'http://localhost:5173';
 const WIDGET_URL = `${WIDGET_BASE}${WIDGET_BASE.includes('?') ? '&' : '?'}embed=1`;
 
+/** Kill switch — set NEXT_PUBLIC_SHOW_CHATBOT=false to hide the chat popup entirely. */
+const CHATBOT_VISIBLE = process.env.NEXT_PUBLIC_SHOW_CHATBOT !== 'false';
+
 /** Timeout before showing error state in the iframe loader (ms). */
 const IFRAME_LOAD_TIMEOUT_MS = 12_000;
 
@@ -82,6 +85,9 @@ function AgentIframe({ widgetUrl }: { widgetUrl: string }) {
 // ── Floating chat popup (widget-only, no outer chrome) ──────
 export function ChatPopup() {
   const { isOpen, close } = useChatPopup();
+
+  // Kill switch — hide entire chatbot (popup + bubble won't open)
+  if (!CHATBOT_VISIBLE) return null;
 
   // ESC to close
   useEffect(() => {

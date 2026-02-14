@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useRecaptcha } from '../hooks/useRecaptcha';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || window.location.origin;
 
 interface EmailGateModalProps {
   sessionId: string;
