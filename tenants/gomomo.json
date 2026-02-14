@@ -1,0 +1,52 @@
+{
+  "name": "Gomomo",
+  "slug": "gomomo",
+  "timezone": "America/New_York",
+  "slot_duration": 30,
+  "business_hours": {
+    "monday":    { "start": "09:00", "end": "18:00" },
+    "tuesday":   { "start": "09:00", "end": "18:00" },
+    "wednesday": { "start": "09:00", "end": "18:00" },
+    "thursday":  { "start": "09:00", "end": "20:00" },
+    "friday":    { "start": "09:00", "end": "17:00" },
+    "saturday":  { "start": "10:00", "end": "14:00" },
+    "sunday":    null
+  },
+  "services": [
+    {
+      "name": "Demo Consultation",
+      "duration": 30,
+      "price": "$80",
+      "description": "Standard appointment — demonstrates the booking flow"
+    },
+    {
+      "name": "Follow-up Appointment",
+      "duration": 20,
+      "price": "$50",
+      "description": "Progress check — demonstrates rescheduling"
+    },
+    {
+      "name": "Extended Session",
+      "duration": 60,
+      "price": "$150",
+      "description": "Longer appointment — demonstrates multi-slot booking"
+    }
+  ],
+  "persona": {
+    "tone": "warm-casual",
+    "greeting": "Welcome to Gomomo! 😊 I'm an AI receptionist — I can answer questions about the platform or show you how booking works. What would you like to know?",
+    "farewell": "Thanks for checking out Gomomo! 👋",
+    "business_description": "Gomomo is an AI receptionist platform for businesses. This is the demo environment.",
+    "special_instructions": ""
+  },
+  "branding": {
+    "primary_color": "#7C3AED",
+    "logo_url": null,
+    "widget_title": "Gomomo AI Receptionist 🤖",
+    "powered_by": false
+  },
+  "calendar_provider": "none",
+  "voice_enabled": false,
+  "sms_enabled": false,
+  "excel_integration": null
+}

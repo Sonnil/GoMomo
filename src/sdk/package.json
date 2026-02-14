@@ -1,0 +1,50 @@
+{
+  "name": "@eon/receptionist-sdk",
+  "version": "1.0.0",
+  "description": "AI Receptionist Client SDK — embed booking chat on any website, iOS, Android, or desktop app",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/types/index.d.ts"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "npm run build:esm && npm run build:cjs && npm run build:types && npm run build:umd",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:types": "tsc -p tsconfig.types.json",
+    "build:umd": "node scripts/build-umd.mjs",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0",
+    "typescript": "^5.7.0"
+  },
+  "keywords": [
+    "ai-receptionist",
+    "chat",
+    "booking",
+    "sdk",
+    "embed",
+    "websocket"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "directory": "src/sdk"
+  }
+}

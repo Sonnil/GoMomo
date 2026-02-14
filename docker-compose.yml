@@ -1,0 +1,115 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: receptionist
+      POSTGRES_PASSWORD: receptionist_dev
+      POSTGRES_DB: receptionist
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U receptionist"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Backend API + WebSocket ─────────────────────────
+  backend:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+      target: dev
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://receptionist:receptionist_dev@postgres:5432/receptionist
+
+      # ── OpenAI ──
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-your-key-here}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+
+      # ── Google OAuth ──
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: http://localhost:3000/api/oauth/google/callback
+
+      # ── Calendar Mode (mock = DB-only, real = Google Calendar) ──
+      CALENDAR_MODE: ${CALENDAR_MODE:-mock}
+
+      # ── Calendar Failure Simulation (mock mode only) ──
+      CALENDAR_FAIL_MODE: ${CALENDAR_FAIL_MODE:-none}
+      CALENDAR_SYNC_REQUIRED: ${CALENDAR_SYNC_REQUIRED:-false}
+
+      # ── Security / CORS ──
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-only-placeholder-key-0000000000}
+      CORS_ORIGIN: http://localhost:5173
+
+      # ── Hold TTL ──
+      HOLD_TTL_MINUTES: 5
+      HOLD_CLEANUP_INTERVAL_MS: 60000
+
+      # ── Twilio (optional — leave blank to skip) ──
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
+      TWILIO_WEBHOOK_BASE_URL: ${TWILIO_WEBHOOK_BASE_URL:-http://localhost:3000}
+
+      # ── Voice Channel ──
+      VOICE_ENABLED: ${VOICE_ENABLED:-false}
+      VOICE_DEFAULT_TENANT_ID: ${VOICE_DEFAULT_TENANT_ID:-00000000-0000-4000-a000-000000000001}
+      VOICE_MAX_CALL_DURATION_MS: 600000
+      VOICE_MAX_TURNS: 20
+      VOICE_MAX_RETRIES: 3
+      VOICE_TTS_VOICE: Polly.Joanna
+      VOICE_TTS_LANGUAGE: en-US
+      VOICE_SPEECH_TIMEOUT: auto
+      VOICE_SPEECH_MODEL: phone_call
+
+      # ── SMS Handoff ──
+      SMS_HANDOFF_ENABLED: ${SMS_HANDOFF_ENABLED:-false}
+      SMS_HANDOFF_WEB_URL: ${SMS_HANDOFF_WEB_URL:-http://localhost:5173}
+      SMS_HANDOFF_TOKEN_TTL_MINUTES: 15
+      SMS_RATE_LIMIT_MAX: 3
+      SMS_RATE_LIMIT_WINDOW_MINUTES: 60
+
+      # ── Excel Integration ──
+      EXCEL_ENABLED: ${EXCEL_ENABLED:-false}
+      EXCEL_DEFAULT_FILE_PATH: ${EXCEL_DEFAULT_FILE_PATH:-}
+      EXCEL_SYNC_INTERVAL_SECONDS: 30
+      EXCEL_RECONCILIATION_INTERVAL_MS: 300000
+    volumes:
+      - ./src/backend/src:/app/src  # hot-reload source for tsx watch
+      - ./src/backend/package.json:/app/package.json:ro
+
+  # ── React Chat Widget (dev server) ──────────────────
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_WS_URL: http://localhost:3000
+      VITE_DEMO_MODE: ${VITE_DEMO_MODE:-}
+      VITE_TENANT_ID: ${VITE_TENANT_ID:-}
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

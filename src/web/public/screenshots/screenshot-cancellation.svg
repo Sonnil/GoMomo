@@ -1,0 +1,30 @@
+<!-- TODO: Replace with actual screenshot of secure cancellation flow -->
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="560" viewBox="0 0 390 560">
+  <rect width="390" height="560" rx="16" fill="#18181b"/>
+  <rect x="1" y="1" width="388" height="558" rx="15" fill="none" stroke="#27272a" stroke-width="1"/>
+  <!-- Phone chrome -->
+  <rect x="24" y="24" width="342" height="48" rx="8" fill="#27272a"/>
+  <circle cx="48" cy="48" r="6" fill="#6366f1"/>
+  <text x="68" y="53" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#fafafa">gomomo.ai</text>
+  <!-- Chat bubbles -->
+  <rect x="24" y="96" width="260" height="48" rx="12" fill="#27272a"/>
+  <text x="40" y="124" font-family="system-ui,sans-serif" font-size="13" fill="#a1a1aa">I need to cancel my appointment.</text>
+  <rect x="100" y="160" width="266" height="64" rx="12" fill="rgba(99,102,241,0.15)"/>
+  <text x="116" y="184" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">Sure! Please share your booking</text>
+  <text x="116" y="204" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">reference code.</text>
+  <rect x="24" y="240" width="160" height="48" rx="12" fill="#27272a"/>
+  <text x="40" y="268" font-family="system-ui,sans-serif" font-size="13" fill="#a1a1aa">It's APT-7291</text>
+  <rect x="80" y="304" width="286" height="64" rx="12" fill="rgba(99,102,241,0.15)"/>
+  <text x="96" y="328" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">For security, what are the last</text>
+  <text x="96" y="348" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">4 digits of your phone number?</text>
+  <rect x="24" y="384" width="100" height="48" rx="12" fill="#27272a"/>
+  <text x="40" y="412" font-family="system-ui,sans-serif" font-size="13" fill="#a1a1aa">1234</text>
+  <!-- Confirmation -->
+  <rect x="100" y="448" width="266" height="48" rx="12" fill="rgba(34,197,94,0.15)"/>
+  <text x="116" y="477" font-family="system-ui,sans-serif" font-size="13" fill="#22c55e">✅ APT-7291 has been cancelled.</text>
+  <!-- Input bar -->
+  <rect x="24" y="488" width="342" height="48" rx="24" fill="#27272a"/>
+  <text x="48" y="517" font-family="system-ui,sans-serif" font-size="13" fill="#71717a">Type a message…</text>
+  <circle cx="340" cy="512" r="16" fill="#6366f1"/>
+  <text x="334" y="517" font-family="system-ui,sans-serif" font-size="14" fill="white">→</text>
+</svg>

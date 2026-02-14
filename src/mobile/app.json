@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "gomomo",
+    "slug": "gomomo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "gomomo",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#09090b"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.gomomo.app",
+      "associatedDomains": [
+        "applinks:gomomo.ai"
+      ]
+    },
+    "android": {
+      "package": "ai.gomomo.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#09090b"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "gomomo.ai",
+              "pathPrefix": "/verify-email"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "backendBaseUrl": "http://localhost:3000",
+      "tenantId": "00000000-0000-4000-a000-000000000001"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

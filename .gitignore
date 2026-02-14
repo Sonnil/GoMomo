@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Postgres data (Docker volume)
+.pg-data/
+
+# Logs
+.logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# EON agent workspace (internal tooling)
+.eon/
+
+# Mobile (Expo / React Native)
+src/mobile/.expo/
+src/mobile/ios/
+src/mobile/android/
+
+# Coverage
+coverage/
+
+# Misc
+*.swp
+*.swo
+*~

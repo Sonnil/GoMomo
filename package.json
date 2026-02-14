@@ -1,0 +1,39 @@
+{
+  "name": "prj-20260205-001-gomomo",
+  "version": "1.0.0",
+  "description": "gomomo.ai — Intelligent scheduling powered by AI. Books appointments via web chat and integrates with Google Calendar without overbooking.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "npm --prefix src/backend test",
+    "lint": "npm --prefix src/backend run lint",
+    "typecheck": "npm --prefix src/backend run typecheck",
+    "dev:backend": "npm --prefix src/backend run dev",
+    "dev:web": "npm --prefix src/web run dev",
+    "dev:widget": "npm --prefix src/frontend run dev",
+    "dev:all": "concurrently -k -n backend,web,widget -c blue,green,magenta \"npm run dev:backend\" \"npm run dev:web\" \"npm run dev:widget\"",
+    "demo:start": "bash scripts/demo-start.sh",
+    "demo:stop": "bash scripts/demo-stop.sh",
+    "demo:status": "bash scripts/demo-status.sh",
+    "demo:smoke": "node scripts/demo-smoke.cjs",
+    "web:dev": "npm --prefix src/web run dev",
+    "web:build": "npm --prefix src/web run build",
+    "web:start": "npm --prefix src/web run start",
+    "mobile:start": "npm --prefix src/mobile start",
+    "mobile:ios": "npm --prefix src/mobile run ios",
+    "mobile:android": "npm --prefix src/mobile run android"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@embedded-postgres/darwin-arm64": "^18.1.0-beta.16",
+    "embedded-postgres": "^18.1.0-beta.16"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

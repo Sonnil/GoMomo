@@ -1,0 +1,42 @@
+<!-- TODO: Replace with actual screenshot of email verification flow -->
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="560" viewBox="0 0 390 560">
+  <rect width="390" height="560" rx="16" fill="#18181b"/>
+  <rect x="1" y="1" width="388" height="558" rx="15" fill="none" stroke="#27272a" stroke-width="1"/>
+  <!-- Phone chrome -->
+  <rect x="24" y="24" width="342" height="48" rx="8" fill="#27272a"/>
+  <circle cx="48" cy="48" r="6" fill="#6366f1"/>
+  <text x="68" y="53" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#fafafa">gomomo.ai</text>
+  <!-- Chat bubbles -->
+  <rect x="130" y="96" width="236" height="64" rx="12" fill="rgba(99,102,241,0.15)"/>
+  <text x="146" y="120" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">To complete your booking, I'll</text>
+  <text x="146" y="140" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">send a verification code.</text>
+  <!-- Verification card -->
+  <rect x="40" y="180" width="310" height="160" rx="12" fill="#09090b" stroke="#27272a" stroke-width="1"/>
+  <circle cx="195" cy="220" r="20" fill="rgba(34,197,94,0.15)"/>
+  <text x="187" y="227" font-family="system-ui,sans-serif" font-size="20" fill="#22c55e">✉</text>
+  <text x="120" y="266" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#fafafa">Check your email</text>
+  <text x="95" y="290" font-family="system-ui,sans-serif" font-size="12" fill="#a1a1aa">Enter the 6-digit code we sent to</text>
+  <text x="128" y="308" font-family="system-ui,sans-serif" font-size="12" fill="#6366f1">j***@example.com</text>
+  <!-- Code input -->
+  <g transform="translate(80, 360)">
+    <rect x="0" y="0" width="36" height="44" rx="8" fill="#27272a" stroke="#6366f1" stroke-width="1.5"/>
+    <text x="12" y="30" font-family="system-ui,monospace" font-size="20" font-weight="700" fill="#fafafa">4</text>
+    <rect x="44" y="0" width="36" height="44" rx="8" fill="#27272a" stroke="#6366f1" stroke-width="1.5"/>
+    <text x="56" y="30" font-family="system-ui,monospace" font-size="20" font-weight="700" fill="#fafafa">8</text>
+    <rect x="88" y="0" width="36" height="44" rx="8" fill="#27272a" stroke="#6366f1" stroke-width="1.5"/>
+    <text x="100" y="30" font-family="system-ui,monospace" font-size="20" font-weight="700" fill="#fafafa">2</text>
+    <rect x="132" y="0" width="36" height="44" rx="8" fill="#27272a" stroke="#27272a" stroke-width="1.5"/>
+    <rect x="176" y="0" width="36" height="44" rx="8" fill="#27272a" stroke="#27272a" stroke-width="1.5"/>
+    <rect x="220" y="0" width="36" height="44" rx="8" fill="#27272a" stroke="#27272a" stroke-width="1.5"/>
+  </g>
+  <!-- Typing indicator -->
+  <rect x="24" y="430" width="60" height="24" rx="12" fill="#27272a"/>
+  <circle cx="40" cy="442" r="3" fill="#71717a"/>
+  <circle cx="52" cy="442" r="3" fill="#a1a1aa"/>
+  <circle cx="64" cy="442" r="3" fill="#71717a"/>
+  <!-- Input bar -->
+  <rect x="24" y="488" width="342" height="48" rx="24" fill="#27272a"/>
+  <text x="48" y="517" font-family="system-ui,sans-serif" font-size="13" fill="#71717a">Type a message…</text>
+  <circle cx="340" cy="512" r="16" fill="#6366f1"/>
+  <text x="334" y="517" font-family="system-ui,sans-serif" font-size="14" fill="white">→</text>
+</svg>

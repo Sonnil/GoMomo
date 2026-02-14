@@ -1,0 +1,26 @@
+<!-- TODO: Replace with actual screenshot of the booking flow -->
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="560" viewBox="0 0 390 560">
+  <rect width="390" height="560" rx="16" fill="#18181b"/>
+  <rect x="1" y="1" width="388" height="558" rx="15" fill="none" stroke="#27272a" stroke-width="1"/>
+  <!-- Phone chrome -->
+  <rect x="24" y="24" width="342" height="48" rx="8" fill="#27272a"/>
+  <circle cx="48" cy="48" r="6" fill="#6366f1"/>
+  <text x="68" y="53" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#fafafa">gomomo.ai</text>
+  <!-- Chat bubbles -->
+  <rect x="24" y="96" width="220" height="48" rx="12" fill="#27272a"/>
+  <text x="40" y="124" font-family="system-ui,sans-serif" font-size="13" fill="#a1a1aa">Hi! I'd like to book a haircut.</text>
+  <rect x="130" y="160" width="236" height="64" rx="12" fill="rgba(99,102,241,0.15)"/>
+  <text x="146" y="184" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">Great! I have openings tomorrow</text>
+  <text x="146" y="204" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">at 10am, 2pm, and 4pm.</text>
+  <rect x="24" y="240" width="180" height="48" rx="12" fill="#27272a"/>
+  <text x="40" y="268" font-family="system-ui,sans-serif" font-size="13" fill="#a1a1aa">2pm works perfectly!</text>
+  <rect x="100" y="304" width="266" height="80" rx="12" fill="rgba(99,102,241,0.15)"/>
+  <text x="116" y="330" font-family="system-ui,sans-serif" font-size="13" fill="#fafafa">✅ Booked! Your appointment:</text>
+  <text x="116" y="352" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#6366f1">Tomorrow at 2:00 PM</text>
+  <text x="116" y="372" font-family="system-ui,sans-serif" font-size="12" fill="#a1a1aa">Ref: APT-7291</text>
+  <!-- Input bar -->
+  <rect x="24" y="488" width="342" height="48" rx="24" fill="#27272a"/>
+  <text x="48" y="517" font-family="system-ui,sans-serif" font-size="13" fill="#71717a">Type a message…</text>
+  <circle cx="340" cy="512" r="16" fill="#6366f1"/>
+  <text x="334" y="517" font-family="system-ui,sans-serif" font-size="14" fill="white">→</text>
+</svg>

@@ -1,0 +1,144 @@
+EON: Add LOCAL TESTING SUPPORT for Google Calendar integration.
+
+REQUIREMENTS
+1. Support two modes:
+   - REAL mode: uses Google OAuth credentials
+   - MOCK mode: simulates calendar availability and bookings
+2. Add an environment flag:
+   - CALENDAR_MODE=real | mock
+3. In mock mode:
+   - availability returns deterministic slots
+   - bookings are persisted in Postgres only
+4. Ensure the AI agent behaves IDENTICALLY in both modes
+
+OUTPUT
+- Code changes only
+- Updated .env.example
+- Instructions to switch between modes locally
+EON: Add LOCAL TESTING SUPPORT for Google Calendar integration.
+
+REQUIREMENTS
+1. Support two modes:
+   - REAL mode: uses Google OAuth credentials
+   - MOCK mode: simulates calendar availability and bookings
+2. Add an environment flag:
+   - CALENDAR_MODE=real | mock
+3. In mock mode:
+   - availability returns deterministic slots
+   - bookings are persisted in Postgres only
+4. Ensure the AI agent behaves IDENTICALLY in both modes
+
+OUTPUT
+- Code changes only
+- Updated .env.example
+- Instructions to switch between modes locally
+project:
+  id: "prj-20260205-001"
+  name: "gomomo"
+  description: "gomomo.ai — Intelligent scheduling powered by AI. Books appointments via web chat and integrates with Google Calendar without overbooking."
+  created: "2026-02-05T00:00:00Z"
+  status: "active"
+
+regulatory:
+  mode: "standard"
+  classification: ""
+  standards: []
+  risk_level: "low"
+
+scope:
+  objectives:
+    - "Enable end-users to book, reschedule, and cancel appointments via web chat"
+    - "Integrate with Google Calendar to prevent double-booking"
+    - "Support multi-tenant deployment with per-tenant config and OAuth"
+  deliverables:
+    - "Embeddable web chat widget (React)"
+    - "Backend API (Node.js/TypeScript/Fastify)"
+    - "Google Calendar integration adapter"
+    - "AI receptionist agent with deterministic tool-based booking"
+    - "Postgres database with availability hold algorithm"
+    - "Docker Compose for local development"
+    - "Phone voice channel MVP (Twilio + Deepgram STT + Azure Neural TTS) — plan: docs/architecture/phone-mvp-implementation.md"
+  out_of_scope:
+    - "Excel integration (design spec: docs/architecture/extension-design-spec.md §3)"
+    - "Payment processing"
+    - "Appointment reminders"
+    - "Marketing features"
+  constraints:
+    - "No overbooking: AvailabilityHold with TTL, atomic booking flow, DB-level uniqueness"
+    - "Deterministic AI: agent must never claim booking without backend confirmation"
+    - "Timezone-safe: IANA timezones end-to-end"
+    - "Multi-tenant: tenant-specific config + OAuth tokens"
+    - "Auditability: log all booking lifecycle events"
+
+budget:
+  ceiling: 0
+  currency: "USD"
+  allocated: 0
+  spent: 0
+  model_cost_ceiling: 0
+  alerts:
+    warn_threshold: 0.7
+    critical_threshold: 0.9
+    block_threshold: 1.0
+
+timeline:
+  target_start: "2026-02-05"
+  target_end: ""
+  milestones: []
+
+access:
+  agents:
+    required:
+      - orchestrator
+      - oversight
+      - methodology_expert
+      - product
+      - architect
+      - planner
+      - dev
+      - ux_frontend
+      - qa
+      - security
+      - devops
+    optional:
+      - data_engineer
+      - sre
+      - performance_cost
+      - code_steward
+    excluded: []
+  external_services:
+    - "https://www.googleapis.com/calendar/v3"
+    - "https://oauth2.googleapis.com"
+    - "https://accounts.google.com"
+    - "https://api.twilio.com"
+    - "https://api.deepgram.com"
+    - "https://*.tts.speech.microsoft.com"
+  data_classification: "confidential"
+
+technology:
+  languages: ["TypeScript"]
+  frameworks: ["Fastify", "React"]
+  infrastructure: ["Docker", "PostgreSQL"]
+  template_version: "1.0.0"
+
+governance:
+  gates_required:
+    - "GATE-STR-01"
+    - "GATE-BUD-01"
+    - "GATE-QA-01"
+    - "GATE-QA-02"
+    - "GATE-SEC-01"
+    - "GATE-SEC-02"
+    - "GATE-CMP-01"
+    - "GATE-OVS-01"
+  review_cadence: "weekly"
+  escalation_contacts:
+    - "orchestrator"
+    - "oversight"
+    - "ceo"
+
+lineage:
+  initiated_by: "CEO directive: gomomo.ai — intelligent scheduling MVP"
+  strategy_gate: "GATE-STR-01-prj-20260205-001"
+  budget_gate: "GATE-BUD-01-prj-20260205-001"
+  validation_plan: ""

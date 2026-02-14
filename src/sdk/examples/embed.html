@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Receptionist — Embed Example</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    /* Demo page styling */
+    .page-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 40px 20px;
+      text-align: center;
+    }
+    .page-header h1 { font-size: 28px; margin-bottom: 8px; }
+    .page-header p { opacity: 0.9; font-size: 16px; }
+
+    .demo-content {
+      max-width: 800px;
+      margin: 30px auto;
+      padding: 0 20px;
+    }
+    .demo-content h2 {
+      font-size: 20px;
+      margin: 24px 0 12px;
+      color: #444;
+    }
+    .demo-content p { margin-bottom: 12px; color: #666; }
+
+    /* Chat widget container */
+    #chat-widget {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 380px;
+      height: 550px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+      z-index: 10000;
+    }
+    #chat-widget.hidden {
+      transform: translateY(20px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Widget header */
+    .chat-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chat-header h3 { font-size: 16px; font-weight: 600; }
+    .chat-header .status {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    .chat-header button {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+
+    /* Messages area */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .msg {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      word-wrap: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #667eea;
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.assistant {
+      align-self: flex-start;
+      background: #f0f0f0;
+      color: #333;
+      border-bottom-left-radius: 4px;
+    }
+    .msg.system {
+      align-self: center;
+      background: #e8f5e9;
+      color: #2e7d32;
+      font-size: 12px;
+      border-radius: 8px;
+    }
+    .typing-indicator {
+      align-self: flex-start;
+      color: #999;
+      font-size: 13px;
+      font-style: italic;
+    }
+
+    /* Input area */
+    .chat-input {
+      display: flex;
+      border-top: 1px solid #eee;
+      padding: 12px;
+      gap: 8px;
+    }
+    .chat-input input {
+      flex: 1;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      outline: none;
+    }
+    .chat-input input:focus { border-color: #667eea; }
+    .chat-input button {
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .chat-input button:hover { background: #5a6fd6; }
+    .chat-input button:disabled { background: #ccc; cursor: not-allowed; }
+
+    /* FAB (floating action button) */
+    #chat-fab {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      font-size: 28px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s ease;
+    }
+    #chat-fab:hover { transform: scale(1.1); }
+
+    /* Code block styling */
+    pre {
+      background: #1e1e2e;
+      color: #cdd6f4;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+      margin: 12px 0;
+    }
+    code { font-family: 'Fira Code', 'Consolas', monospace; }
+  </style>
+</head>
+<body>
+
+  <!-- Page content (the website that embeds the chat) -->
+  <div class="page-header">
+    <h1>� Gomomo</h1>
+    <p>Your AI receptionist is ready to help — click the chat bubble below!</p>
+  </div>
+
+  <div class="demo-content">
+    <h2>How This Works</h2>
+    <p>
+      This page demonstrates embedding the AI Receptionist chat widget on any website.
+      The floating chat bubble in the bottom-right corner connects to the receptionist
+      backend and lets visitors book, reschedule, or cancel appointments.
+    </p>
+
+    <h2>Embed Code (copy &amp; paste)</h2>
+    <pre><code>&lt;!-- AI Receptionist Widget --&gt;
+&lt;script src="https://your-server.com/sdk/receptionist-sdk.min.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  const client = new ReceptionistSDK.ReceptionistClient({
+    serverUrl: 'https://your-server.com',
+    tenantId: 'YOUR_TENANT_ID',
+  });
+
+  client.on('message', (msg) =&gt; {
+    // Render msg.response in your chat UI
+    console.log('Assistant:', msg.response);
+  });
+
+  client.startSession().then((session) =&gt; {
+    console.log('Session started:', session.session_id);
+  });
+
+  // Send a message:
+  // client.sendMessage('I want to book a haircut');
+&lt;/script&gt;</code></pre>
+
+    <h2>Mobile / REST API</h2>
+    <pre><code>// 1. Start a session
+POST /api/auth/session
+{ "tenant_id": "YOUR_TENANT_ID" }
+→ { "token": "...", "session_id": "..." }
+
+// 2. Send messages
+POST /api/tenants/YOUR_TENANT_ID/chat
+Authorization: Bearer YOUR_TOKEN
+{ "session_id": "...", "message": "I want to book" }
+→ { "response": "...", "meta": { ... } }
+
+// 3. Refresh token (before expiry)
+POST /api/auth/refresh
+{ "token": "YOUR_TOKEN" }
+→ { "token": "NEW_TOKEN", ... }</code></pre>
+
+    <h2>Try It Live</h2>
+    <p>
+      Click the chat bubble in the bottom-right corner. This page is connected
+      to a local dev server at <code>http://localhost:3000</code>.
+    </p>
+  </div>
+
+  <!-- Chat Widget UI -->
+  <div id="chat-widget" class="hidden">
+    <div class="chat-header">
+      <div>
+        <h3>AI Receptionist</h3>
+        <div class="status" id="status-text">Connecting…</div>
+      </div>
+      <button onclick="toggleChat()" title="Close">✕</button>
+    </div>
+    <div class="chat-messages" id="messages"></div>
+    <div class="chat-input">
+      <input type="text" id="msg-input" placeholder="Type a message…"
+             onkeydown="if(event.key==='Enter')sendMsg()" disabled>
+      <button id="send-btn" onclick="sendMsg()" disabled>Send</button>
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <button id="chat-fab" onclick="toggleChat()">💬</button>
+
+  <!-- SDK Script (use local UMD bundle or CDN) -->
+  <script src="./receptionist-sdk.js"></script>
+  <script>
+    // ── Configuration ─────────────────────────────────────
+    const SERVER_URL = 'http://localhost:3000';
+    const TENANT_ID = '00000000-0000-4000-a000-000000000001'; // demo tenant
+
+    // ── State ─────────────────────────────────────────────
+    let chatOpen = false;
+    let client = null;
+    let sessionStarted = false;
+
+    // ── DOM refs ──────────────────────────────────────────
+    const widget = document.getElementById('chat-widget');
+    const fab = document.getElementById('chat-fab');
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('msg-input');
+    const sendBtn = document.getElementById('send-btn');
+    const statusEl = document.getElementById('status-text');
+
+    // ── Toggle chat open/close ────────────────────────────
+    function toggleChat() {
+      chatOpen = !chatOpen;
+      widget.classList.toggle('hidden', !chatOpen);
+      fab.style.display = chatOpen ? 'none' : 'flex';
+
+      if (chatOpen && !sessionStarted) {
+        initChat();
+      }
+      if (chatOpen) {
+        inputEl.focus();
+      }
+    }
+
+    // ── Initialize SDK ────────────────────────────────────
+    async function initChat() {
+      statusEl.textContent = 'Connecting…';
+
+      client = new ReceptionistSDK.ReceptionistClient({
+        serverUrl: SERVER_URL,
+        tenantId: TENANT_ID,
+        transport: 'websocket',
+      });
+
+      // Listen for responses
+      client.on('message', (msg) => {
+        addMessage('assistant', msg.response);
+      });
+
+      client.on('typing', (isTyping) => {
+        const existing = document.getElementById('typing-indicator');
+        if (isTyping && !existing) {
+          const el = document.createElement('div');
+          el.id = 'typing-indicator';
+          el.className = 'typing-indicator';
+          el.textContent = 'Receptionist is typing…';
+          messagesEl.appendChild(el);
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        } else if (!isTyping && existing) {
+          existing.remove();
+        }
+      });
+
+      client.on('status', (status) => {
+        statusEl.textContent = status.detail;
+      });
+
+      client.on('push', (event) => {
+        addMessage('system', '📣 ' + (event.payload?.message || 'New update'));
+      });
+
+      client.on('error', (err) => {
+        addMessage('system', '⚠️ ' + err.error);
+      });
+
+      client.on('disconnected', () => {
+        statusEl.textContent = 'Disconnected';
+        inputEl.disabled = true;
+        sendBtn.disabled = true;
+      });
+
+      try {
+        const session = await client.startSession();
+        sessionStarted = true;
+        statusEl.textContent = 'Connected';
+        inputEl.disabled = false;
+        sendBtn.disabled = false;
+
+        if (session.returning_customer?.display_name) {
+          addMessage('system',
+            `Welcome back, ${session.returning_customer.display_name}!`
+          );
+        } else {
+          addMessage('assistant',
+            'Hello! I\'m the AI receptionist. How can I help you today?'
+          );
+        }
+      } catch (err) {
+        statusEl.textContent = 'Connection failed';
+        addMessage('system', '❌ Could not connect: ' + err.message);
+      }
+    }
+
+    // ── Send message ──────────────────────────────────────
+    function sendMsg() {
+      const text = inputEl.value.trim();
+      if (!text || !client) return;
+
+      addMessage('user', text);
+      inputEl.value = '';
+      client.sendMessage(text);
+    }
+
+    // ── Render message ────────────────────────────────────
+    function addMessage(role, content) {
+      // Remove typing indicator if present
+      document.getElementById('typing-indicator')?.remove();
+
+      const el = document.createElement('div');
+      el.className = `msg ${role}`;
+      el.textContent = content;
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+  </script>
+</body>
+</html>

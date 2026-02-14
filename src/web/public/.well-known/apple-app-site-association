@@ -1,0 +1,20 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAM_ID.ai.gomomo.app",
+        "paths": [
+          "/verify-email",
+          "/verify-email?*"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "TEAM_ID.ai.gomomo.app"
+    ]
+  },
+  "_comment": "TODO: Replace TEAM_ID with the real Apple Developer Team ID once the iOS app is created. See docs/mobile-readiness.md for the full universal-link setup checklist."
+}
