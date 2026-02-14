@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { adminFetch, API_BASE } from '../../layout';
+import { adminFetch, API_BASE } from '@/lib/admin';
 
 interface Tenant {
   id: string;

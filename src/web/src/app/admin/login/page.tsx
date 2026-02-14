@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { setAdminKey, adminFetch } from '../layout';
+import { setAdminKey, adminFetch } from '@/lib/admin';
 
 export default function AdminLoginPage() {
   const [key, setKey] = useState('');
