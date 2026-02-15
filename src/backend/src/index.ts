@@ -58,6 +58,27 @@ async function main(): Promise<void> {
   await runMigrations();
   console.log('Migrations complete.');
 
+  // 1-seed. Ensure the default demo tenant exists (idempotent — safe to re-run).
+  // The full seed.ts script adds sample appointments and policy rules but requires
+  // manual invocation.  This lightweight upsert ensures the chat widget can always
+  // resolve the hard-coded DEFAULT_TENANT_ID so the demo is never broken on first deploy.
+  {
+    const { pool: seedPool } = await import('./db/client.js');
+    const DEMO_ID = '00000000-0000-4000-a000-000000000001';
+    const result = await seedPool.query(
+      `INSERT INTO tenants (id, name, slug, timezone, slot_duration, business_hours, services, service_catalog_mode)
+       VALUES ($1, 'Gomomo', 'gomomo', 'America/New_York', 30,
+         '{"monday":{"start":"09:00","end":"18:00"},"tuesday":{"start":"09:00","end":"18:00"},"wednesday":{"start":"09:00","end":"18:00"},"thursday":{"start":"09:00","end":"20:00"},"friday":{"start":"09:00","end":"17:00"},"saturday":{"start":"10:00","end":"14:00"},"sunday":null}',
+         '[{"name":"Demo Consultation","duration":30,"price":"$80","description":"Standard appointment"},{"name":"Follow-up Appointment","duration":20,"price":"$50","description":"Progress check"},{"name":"Extended Session","duration":60,"price":"$150","description":"Longer appointment"}]',
+         'free_text')
+       ON CONFLICT (id) DO NOTHING`,
+      [DEMO_ID],
+    );
+    if (result.rowCount === 1) {
+      console.log('🌱 Demo tenant created (Gomomo — 00000000-…-000000000001)');
+    }
+  }
+
   // 1a. Dev-only: ensure the default tenant row matches expected defaults
   await checkDefaultTenantDrift();
 
