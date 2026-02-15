@@ -229,6 +229,10 @@ async function main(): Promise<void> {
         connectSrc: ["'self'", 'ws:', 'wss:'],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
+        // Allow blob: URLs for TTS audio playback (new Audio(blobUrl))
+        // and MediaRecorder audio capture (STT)
+        mediaSrc: ["'self'", 'blob:'],
+        workerSrc: ["'self'", 'blob:'],
         frameAncestors,
       },
     },
@@ -255,6 +259,13 @@ async function main(): Promise<void> {
     prefix: '/widget/',
     decorateReply: false,          // avoid conflict if registered elsewhere
     wildcard: false,               // we handle SPA fallback below
+    // Vite hashed assets (assets/*) are safe to cache forever.
+    // index.html must not be cached so deploys take effect immediately.
+    setHeaders(res, filePath) {
+      if (filePath.includes('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
   });
   // SPA fallback: any /widget/* path that doesn't match a real file
   // returns /widget/index.html so client-side routing works.
