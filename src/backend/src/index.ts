@@ -21,7 +21,7 @@ import { inboundSmsRoutes } from './voice/inbound-sms.routes.js';
 import { smsStatusCallbackRoutes } from './voice/sms-status-callback.routes.js';
 import { tenantRepo } from './repos/tenant.repo.js';
 import { holdRepo } from './repos/hold.repo.js';
-import { handleChatMessage } from './agent/chat-handler.js';
+import { routeChat } from './agent/chat-router.js';
 import { startSyncWorker, stopSyncWorker } from './integrations/excel-sync-worker.js';
 import { startReconciliationJob, stopReconciliationJob } from './jobs/excel-reconciliation.js';
 import { isDemoAvailabilityActive } from './services/availability.service.js';
@@ -663,8 +663,8 @@ async function main(): Promise<void> {
       }
     });
 
-    // Client sends { message }
-    socket.on('message', async (data: { message: string }) => {
+    // Client sends { message, client_meta? }
+    socket.on('message', async (data: { message: string; client_meta?: { client_now_iso?: string; client_tz?: string; client_utc_offset_minutes?: number; locale?: string } }) => {
       if (!tenantId || !sessionId) {
         console.warn(`[ws-msg] ${socket.id} ❌ Message rejected — tenantId=${tenantId} sessionId=${sessionId}`);
         socket.emit('error', { error: 'Must join a tenant first.' });
@@ -672,36 +672,12 @@ async function main(): Promise<void> {
       }
 
       try {
-        // ── Email Gate Check ────────────────────────────────
-        // After the first message+response, require email verification
-        // before allowing further messages.
-        let verifiedEmail: string | null = null;
-        let customerIdentity: import('./domain/types.js').CustomerIdentity | null = null;
-        if (env.REQUIRE_EMAIL_AFTER_FIRST_MESSAGE === 'true') {
-          const { sessionRepo: sessRepo } = await import('./repos/session.repo.js');
-          const isVerified = await sessRepo.isEmailVerified(sessionId);
-          if (!isVerified) {
-            const msgCount = await sessRepo.incrementMessageCount(sessionId);
-            if (msgCount > 1) {
-              // Gate: user has already had their free message
-              socket.emit('email_gate_required', {
-                session_id: sessionId,
-                message: 'Please verify your email to continue the conversation.',
-                message_count: msgCount,
-              });
-              return;
-            }
-          } else {
-            // User is verified — retrieve their full identity so the agent won't re-ask
-            customerIdentity = await sessRepo.getCustomerIdentity(sessionId);
-            verifiedEmail = customerIdentity?.verifiedEmail ?? null;
-          }
-        }
-
-        // ── Trial Message Cap — REMOVED (Phase 14: unlimited chat) ──
+        // ── Hybrid FSM + LLM Router ─────────────────────────
+        // The chat router handles intent classification, FSM state,
+        // deterministic templates, and OTP flows WITHOUT the LLM.
+        // Only non-deterministic intents fall through to the LLM.
 
         socket.emit('typing', { typing: true });
-        socket.emit('status', { phase: 'tool_call', detail: 'Agent is working on it…' });
 
         const tenant = await tenantRepo.findById(tenantId);
         if (!tenant) {
@@ -709,11 +685,11 @@ async function main(): Promise<void> {
           return;
         }
 
-        const { response, meta } = await handleChatMessage(sessionId, tenantId, data.message, tenant, {
+        const result = await routeChat(sessionId, tenantId, data.message, tenant, {
           customerContext: customerReturningContext,
-          verifiedEmail,
-          customerIdentity,
+          clientMeta: data.client_meta,
           onToken: (token: string) => {
+            // Only stream tokens when the LLM is called (not for deterministic responses)
             socket.emit('token', { token });
           },
           onStatus: (phase: string, detail: string) => {
@@ -722,12 +698,16 @@ async function main(): Promise<void> {
         });
 
         // If async jobs were triggered, briefly show a follow-up status chip
-        if (meta.has_async_job) {
+        if (result.meta.has_async_job) {
           socket.emit('status', { phase: 'async_job', detail: 'Scheduling follow-up in progress…' });
         }
 
-        // Send final post-processed response (client replaces streamed tokens with this)
-        socket.emit('response', { session_id: sessionId, response, meta });
+        // Send final response (client replaces streamed tokens with this)
+        socket.emit('response', {
+          session_id: sessionId,
+          response: result.response,
+          meta: { ...result.meta, deterministic: result.deterministic },
+        });
       } catch (err: any) {
         console.error('Chat error:', err);
         socket.emit('error', {

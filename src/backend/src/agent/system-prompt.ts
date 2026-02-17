@@ -16,6 +16,13 @@ export interface SystemPromptOptions {
   verifiedEmail?: string | null;
   /** Full customer identity from a verified session (email, phone, name). */
   customerIdentity?: CustomerIdentity | null;
+  /** Client timezone / locale metadata from the widget. */
+  clientMeta?: {
+    client_now_iso?: string;
+    client_tz?: string;
+    client_utc_offset_minutes?: number;
+    locale?: string;
+  };
 }
 
 export function buildSystemPrompt(
@@ -82,7 +89,22 @@ You may schedule at most ${followupMax} follow-up contacts (SMS or email) per co
   // ── Current date/time context for the LLM ─────────────────
   // Without this, the model guesses dates from its training cutoff and
   // misinterprets relative expressions like "tomorrow" or "Monday Feb 9th".
-  const tz = tenant.timezone;
+  //
+  // Prefer the client's timezone (from the widget) when available and valid,
+  // so relative terms like "today", "tomorrow", "3 PM" resolve correctly
+  // from the *customer's* perspective, not the server or tenant timezone.
+  const clientTz = options.clientMeta?.client_tz;
+  let effectiveTz = tenant.timezone;
+  if (clientTz) {
+    try {
+      // Validate IANA timezone by attempting to use it
+      Intl.DateTimeFormat(undefined, { timeZone: clientTz });
+      effectiveTz = clientTz;
+    } catch {
+      // Invalid timezone string — fall back to tenant timezone
+    }
+  }
+  const tz = effectiveTz;
   const nowZoned = getNow(tz);
   const todayISO = getTodayISO(tz);
   const dayOfWeek = format(nowZoned, 'EEEE');

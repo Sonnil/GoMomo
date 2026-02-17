@@ -220,6 +220,36 @@ async function handleConfirmBooking(
   const { auditRepo: auditLog } = await import('../repos/audit.repo.js');
   const { query } = await import('../db/client.js');
 
+  // ── Email Verification Gate ────────────────────────────
+  // Booking requires a verified email session. If the user
+  // hasn't verified, or the booking email differs from the
+  // verified email, reject and ask to verify first.
+  const { sessionRepo: sessRepo } = await import('../repos/session.repo.js');
+  const { getFsmContext: getFsm } = await import('./chat-fsm.js');
+
+  const sess = await sessRepo.findById(sessionId);
+  if (sess) {
+    const fsm = getFsm((sess.metadata ?? {}) as Record<string, unknown>);
+    const isVerified = sess.email_verified || fsm.verifiedEmail !== null;
+    const verifiedEmail = fsm.verifiedEmail;
+
+    // Gate 1: session not verified at all
+    if (!isVerified) {
+      return {
+        success: false,
+        error: 'EMAIL_VERIFICATION_REQUIRED: The customer must verify their email before booking. Ask them to provide their email so we can send a verification code.',
+      };
+    }
+
+    // Gate 2: booking email doesn't match verified email → force re-verify
+    if (verifiedEmail && args.client_email.toLowerCase() !== verifiedEmail.toLowerCase()) {
+      return {
+        success: false,
+        error: `EMAIL_MISMATCH: The booking email (${args.client_email}) does not match the verified email (${verifiedEmail}). The customer must verify the new email before booking. Ask them to verify ${args.client_email} first.`,
+      };
+    }
+  }
+
   // ── Booking Rate Limit: 1 per hour per email ───────────
   // Query appointments table directly — no migration needed.
   const rateLimitResult = await query(

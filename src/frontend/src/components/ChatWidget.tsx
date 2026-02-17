@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { IntakeForm } from './IntakeForm';
 import { EmailGateModal } from './EmailGateModal';
-import { loadChat, saveChat, saveChatDebounced, clearChat } from '../lib/chat-persistence';
+import { loadChat, saveChat, saveChatDebounced, clearChat, loadInteractionMode, saveInteractionMode } from '../lib/chat-persistence';
+import type { InteractionMode } from '../lib/chat-persistence';
 import { useVoice, getAutoSpeak, setAutoSpeak } from '../hooks/useVoice';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { AGENT_AVATAR_URL } from '../assets/agent-avatar';
@@ -42,6 +43,20 @@ interface ChatWidgetProps {
 
 const WS_URL = import.meta.env.VITE_WS_URL || window.location.origin;
 const API_URL = import.meta.env.VITE_API_URL || window.location.origin;
+
+/** Build client timezone/locale metadata to send with each message. */
+function buildClientMeta() {
+  try {
+    return {
+      client_now_iso: new Date().toISOString(),
+      client_tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      client_utc_offset_minutes: new Date().getTimezoneOffset(),
+      locale: navigator.language,
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 /* ── Follow-up Detection ────────────────────────────────── */
 function isFollowupMessage(text: string): boolean {
@@ -107,6 +122,13 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
   const [pendingGateMessage, setPendingGateMessage] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
 
+  // ── Interaction mode (Chat vs Speak) ──────────────────
+  const [interactionMode, setInteractionMode] = useState<InteractionMode | null>(() => loadInteractionMode());
+  /** Indices of assistant messages whose text is hidden until TTS audio starts playing */
+  const [speakPendingSet, setSpeakPendingSet] = useState<Set<number>>(new Set());
+  /** Fallback timers for speak-pending messages (auto-reveal after 800ms) */
+  const speakFallbackTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
   // ── Voice (Web Voice Mode) ────────────────────────────
   const { capabilities } = useCapabilities();
   const voiceEnabled = capabilities?.voiceWeb ?? false;
@@ -120,10 +142,28 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
     sendMessageRef.current(text);
   }, []);
 
+  /** TTS started playing — reveal any speak-pending assistant text */
+  const handleSpeakStart = useCallback(() => {
+    setSpeakPendingSet(new Set()); // reveal all pending
+    // Clear all fallback timers
+    speakFallbackTimers.current.forEach((t) => clearTimeout(t));
+    speakFallbackTimers.current.clear();
+  }, []);
+
+  /** TTS finished or errored */
+  const handleSpeakEnd = useCallback(() => {
+    // Ensure everything is revealed (idempotent)
+    setSpeakPendingSet(new Set());
+    speakFallbackTimers.current.forEach((t) => clearTimeout(t));
+    speakFallbackTimers.current.clear();
+  }, []);
+
   const voice = useVoice({
     apiUrl: API_URL,
     onTranscript: handleVoiceTranscript,
     autoSpeak: autoSpeakEnabled,
+    onSpeakStart: handleSpeakStart,
+    onSpeakEnd: handleSpeakEnd,
   });
 
   const handleAutoSpeakToggle = useCallback(() => {
@@ -144,8 +184,29 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
       // Entering conversation mode → enable auto-speak
       setAutoSpeakEnabled(true);
       setAutoSpeak(true);
+      // Unlock audio on iOS — this click is a valid user gesture
+      voice.unlockAudio();
     }
     voice.toggleConversationMode();
+  }, [voice]);
+
+  /** User picks Chat or Speak mode (first-interaction or header toggle) */
+  const handleModeSelect = useCallback((mode: InteractionMode) => {
+    setInteractionMode(mode);
+    saveInteractionMode(mode);
+    if (mode === 'speak') {
+      setAutoSpeakEnabled(true);
+      setAutoSpeak(true);
+      // Unlock audio on iOS — this click is a valid user gesture
+      voice.unlockAudio();
+    } else {
+      setAutoSpeakEnabled(false);
+      setAutoSpeak(false);
+      // Exit conversation mode if active
+      if (voice.conversationMode) {
+        voice.toggleConversationMode();
+      }
+    }
   }, [voice]);
 
   const socketRef = useRef<Socket | null>(null);
@@ -182,9 +243,25 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
       lastIdx > lastSpokenIdxRef.current
     ) {
       lastSpokenIdxRef.current = lastIdx;
+
+      // TTS sync gating: in Speak mode, hide text until audio starts
+      if (interactionMode === 'speak') {
+        setSpeakPendingSet((prev) => new Set(prev).add(lastIdx));
+        // Fallback timer: reveal text after 800ms even if audio hasn't started
+        const timer = setTimeout(() => {
+          setSpeakPendingSet((prev) => {
+            const next = new Set(prev);
+            next.delete(lastIdx);
+            return next;
+          });
+          speakFallbackTimers.current.delete(lastIdx);
+        }, 800);
+        speakFallbackTimers.current.set(lastIdx, timer);
+      }
+
       voice.speak(last.content);
     }
-  }, [messages, autoSpeakEnabled, voiceEnabled, voice.speak]);
+  }, [messages, autoSpeakEnabled, voiceEnabled, voice.speak, interactionMode]);
 
   // ── Persist messages to localStorage (debounced) ──────
   useEffect(() => {
@@ -388,7 +465,7 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
         const res = await fetch(`${API_URL}/api/tenants/${tenantId}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sid, message, ...extras }),
+          body: JSON.stringify({ session_id: sid, message, client_meta: buildClientMeta(), ...extras }),
         });
         const data = await res.json();
 
@@ -428,7 +505,7 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
     if (!pendingMessage) return;
     setMessages((prev) => [...prev, { role: 'user', content: pendingMessage }]);
     if (useWebSocket && socketRef.current?.connected) {
-      socketRef.current.emit('message', { message: pendingMessage });
+      socketRef.current.emit('message', { message: pendingMessage, client_meta: buildClientMeta() });
     } else {
       sendViaRest(pendingMessage);
     }
@@ -439,6 +516,11 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
     const trimmed = input.trim();
     if (!trimmed) return;
 
+    // If user starts typing before picking a mode, default to Chat
+    if (interactionMode === null) {
+      handleModeSelect('chat');
+    }
+
     // Track as pending in case the email gate fires
     setPendingGateMessage(trimmed);
 
@@ -446,11 +528,11 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
     setInput('');
 
     if (useWebSocket && socketRef.current?.connected) {
-      socketRef.current.emit('message', { message: trimmed });
+      socketRef.current.emit('message', { message: trimmed, client_meta: buildClientMeta() });
     } else {
       sendViaRest(trimmed);
     }
-  }, [input, useWebSocket, sendViaRest]);
+  }, [input, useWebSocket, sendViaRest, interactionMode, handleModeSelect]);
 
   // ── Keep voice auto-send ref current ──────────────────
   useEffect(() => {
@@ -460,7 +542,7 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
       setPendingGateMessage(trimmed);
       setMessages((prev) => [...prev, { role: 'user', content: trimmed }]);
       if (useWebSocket && socketRef.current?.connected) {
-        socketRef.current.emit('message', { message: trimmed });
+        socketRef.current.emit('message', { message: trimmed, client_meta: buildClientMeta() });
       } else {
         sendViaRest(trimmed);
       }
@@ -480,7 +562,7 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
     setMessages((prev) => [...prev, { role: 'user', content: message }]);
     const extras = recaptchaToken ? { recaptcha_token: recaptchaToken } : undefined;
     if (useWebSocket && socketRef.current?.connected) {
-      socketRef.current.emit('message', { message, ...extras });
+      socketRef.current.emit('message', { message, ...extras, client_meta: buildClientMeta() });
     } else {
       sendViaRest(message, extras);
     }
@@ -518,7 +600,7 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
       setPendingGateMessage(null);
       setMessages((prev) => [...prev, { role: 'user', content: msg }]);
       if (useWebSocket && socketRef.current?.connected) {
-        socketRef.current.emit('message', { message: msg });
+        socketRef.current.emit('message', { message: msg, client_meta: buildClientMeta() });
       } else {
         sendViaRest(msg);
       }
@@ -530,12 +612,33 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
   return (
     <div style={containerStyle}>
       {/* Header */}
-      <div style={styles.header}>
+      <div style={embed ? { ...styles.header, ...styles.headerEmbed } : styles.header}>
         <span style={styles.headerDot(isConnected, connectionFailed)} />
         <span style={styles.headerText}>
           {connectionFailed ? 'Offline' : isConnected ? 'Online' : 'Connecting…'}
         </span>
         <span style={{ flex: 1 }} />
+        {/* Mode toggle: Chat / Speak */}
+        {voiceEnabled && interactionMode !== null && (
+          <span style={modeStyles.toggleGroup}>
+            <button
+              onClick={() => handleModeSelect('chat')}
+              style={interactionMode === 'chat' ? modeStyles.toggleActive : modeStyles.toggleBtn}
+              title="Chat mode (text only)"
+              aria-label="Chat mode"
+            >
+              💬
+            </button>
+            <button
+              onClick={() => handleModeSelect('speak')}
+              style={interactionMode === 'speak' ? modeStyles.toggleActive : modeStyles.toggleBtn}
+              title="Speak mode (voice + text)"
+              aria-label="Speak mode"
+            >
+              🔊
+            </button>
+          </span>
+        )}
         {messages.length > 0 && (
           <button
             onClick={handleClearChat}
@@ -543,7 +646,7 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
             title="Clear chat history"
             aria-label="Clear chat history"
           >
-            🗑
+            🗑️
           </button>
         )}
       </div>
@@ -566,6 +669,20 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
         {!connectionFailed && messages.length === 0 && (
           <div style={styles.empty}>
             👋 Hi! I'm your AI agent. How can I help you today?
+            {/* Mode selection prompt — shown when user hasn't chosen yet */}
+            {voiceEnabled && interactionMode === null && (
+              <div style={modeStyles.prompt}>
+                <div style={modeStyles.promptLabel}>How would you like to interact?</div>
+                <div style={modeStyles.promptRow}>
+                  <button onClick={() => handleModeSelect('chat')} style={modeStyles.promptBtn}>
+                    💬 Chat
+                  </button>
+                  <button onClick={() => handleModeSelect('speak')} style={modeStyles.promptBtn}>
+                    🔊 Speak
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {messages.map((msg, i) => (
@@ -574,7 +691,11 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
               <div style={avatarStyles.row} className="chat-msg-enter">
                 <img src={AGENT_AVATAR_URL} alt="Agent" style={avatarStyles.avatar} />
                 <div style={{ ...styles.bubble, ...styles.assistantBubble }}>
-                  {msg.content}
+                  {speakPendingSet.has(i) ? (
+                    <span style={modeStyles.speakingPlaceholder}>🔊 Speaking…</span>
+                  ) : (
+                    msg.content
+                  )}
                 </div>
               </div>
             ) : (
@@ -598,7 +719,7 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
                       const text = `I'd like to book the ${slot.display_time} slot${slot.service ? ` for ${slot.service}` : ''}`;
                       setMessages((prev) => [...prev, { role: 'user', content: text }]);
                       if (useWebSocket && socketRef.current?.connected) {
-                        socketRef.current.emit('message', { message: text });
+                        socketRef.current.emit('message', { message: text, client_meta: buildClientMeta() });
                       } else {
                         sendViaRest(text);
                       }
@@ -639,20 +760,44 @@ export function ChatWidget({ tenantId, embed, pendingMessage, onPendingMessageCo
           <IntakeForm onSubmit={handleIntakeSubmit} onCancel={handleIntakeCancel} />
         )}
         {(isTyping || statusText) && (
-          <div style={{ ...styles.bubble, ...styles.assistantBubble }}>
-            {statusText ? (
-              <span style={styles.statusChip}>
-                <span>⚙️</span>
-                <span>{statusText}</span>
-                <span style={styles.typing}>●●●</span>
-              </span>
-            ) : (
-              <span style={styles.typing}>●●●</span>
-            )}
+          <div style={avatarStyles.row}>
+            <img src={AGENT_AVATAR_URL} alt="Agent" style={avatarStyles.avatar} />
+            <div style={{ ...styles.bubble, ...styles.assistantBubble }}>
+              {statusText ? (
+                <span style={styles.statusChip}>
+                  <span>⚙️</span>
+                  <span>{statusText}</span>
+                  <span style={styles.thinkingDots}>
+                    <span style={styles.dot1}>●</span>
+                    <span style={styles.dot2}>●</span>
+                    <span style={styles.dot3}>●</span>
+                  </span>
+                </span>
+              ) : (
+                <span style={styles.thinkingDots}>
+                  <span style={styles.dot1}>●</span>
+                  <span style={styles.dot2}>●</span>
+                  <span style={styles.dot3}>●</span>
+                </span>
+              )}
+            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Audio-blocked banner — iOS Safari needs user gesture to enable audio */}
+      {voiceEnabled && interactionMode === 'speak' && !voice.audioUnlocked && (
+        <div style={voiceStyles.audioBlockedBanner}>
+          <span>🔇 Audio is blocked on this device.</span>
+          <button
+            onClick={() => voice.unlockAudio()}
+            style={voiceStyles.audioUnlockBtn}
+          >
+            🔊 Enable audio
+          </button>
+        </div>
+      )}
 
       {/* Voice status bar — shows during conversation mode or active voice states */}
       {voiceEnabled && (voice.conversationMode || voice.state !== 'idle') && (
@@ -783,6 +928,12 @@ const styles: Record<string, any> = {
     borderBottom: '1px solid var(--border)',
     background: 'var(--primary)',
     color: '#fff',
+    position: 'relative' as const,
+    zIndex: 1,
+  },
+  /** Embed mode: extra right padding so trash doesn't hide behind the popup close X */
+  headerEmbed: {
+    paddingRight: 44,
   },
   headerDot: (connected: boolean, failed?: boolean) => ({
     width: 8,
@@ -792,15 +943,16 @@ const styles: Record<string, any> = {
   }),
   headerText: { fontSize: 14, fontWeight: 600 },
   clearBtn: {
-    background: 'transparent',
+    background: 'rgba(255,255,255,0.15)',
     border: 'none',
-    color: 'rgba(255,255,255,0.7)',
+    color: '#fff',
     fontSize: 14,
     cursor: 'pointer',
-    padding: '2px 6px',
-    borderRadius: 4,
+    padding: '4px 8px',
+    borderRadius: 6,
     lineHeight: 1,
-    transition: 'color 0.15s',
+    transition: 'background 0.15s',
+    flexShrink: 0,
   },
   messages: {
     flex: 1,
@@ -876,6 +1028,23 @@ const styles: Record<string, any> = {
   typing: {
     animation: 'pulse 1s ease-in-out infinite',
     letterSpacing: 2,
+  },
+  thinkingDots: {
+    display: 'inline-flex',
+    gap: 3,
+    letterSpacing: 2,
+  },
+  dot1: {
+    animation: 'thinkBounce 1.4s ease-in-out infinite',
+    animationDelay: '0s',
+  },
+  dot2: {
+    animation: 'thinkBounce 1.4s ease-in-out infinite',
+    animationDelay: '0.2s',
+  },
+  dot3: {
+    animation: 'thinkBounce 1.4s ease-in-out infinite',
+    animationDelay: '0.4s',
   },
   statusChip: {
     display: 'flex',
@@ -1072,5 +1241,102 @@ const voiceStyles: Record<string, any> = {
     opacity: 1,
     background: '#f0fdf4',
     borderColor: '#4ade80',
+  },
+  audioBlockedBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: '6px 12px',
+    borderTop: '1px solid #fbbf24',
+    background: '#fffbeb',
+    fontSize: 12,
+    color: '#92400e',
+  },
+  audioUnlockBtn: {
+    background: '#fef3c7',
+    border: '1px solid #f59e0b',
+    borderRadius: 6,
+    padding: '3px 10px',
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#92400e',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap' as const,
+  },
+};
+
+/* ── Mode Selector Styles ───────────────────────────────── */
+const modeStyles: Record<string, React.CSSProperties> = {
+  /** Prompt shown on empty state when mode not yet chosen */
+  prompt: {
+    marginTop: 16,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: 10,
+  },
+  promptLabel: {
+    fontSize: 13,
+    color: 'var(--text-muted, #888)',
+    fontWeight: 500,
+  },
+  promptRow: {
+    display: 'flex',
+    gap: 10,
+  },
+  promptBtn: {
+    padding: '10px 20px',
+    borderRadius: 10,
+    border: '1px solid var(--border, #e2e8f0)',
+    background: 'var(--surface, #fff)',
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  /** Header toggle group */
+  toggleGroup: {
+    display: 'inline-flex',
+    gap: 2,
+    background: 'rgba(255,255,255,0.12)',
+    borderRadius: 8,
+    padding: 2,
+  },
+  toggleBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 13,
+    cursor: 'pointer',
+    padding: '3px 8px',
+    borderRadius: 6,
+    lineHeight: 1,
+    transition: 'all 0.15s',
+  },
+  toggleActive: {
+    background: 'rgba(255,255,255,0.25)',
+    border: 'none',
+    color: '#fff',
+    fontSize: 13,
+    cursor: 'pointer',
+    padding: '3px 8px',
+    borderRadius: 6,
+    lineHeight: 1,
+    transition: 'all 0.15s',
+    fontWeight: 700,
+  },
+  /** Placeholder shown while TTS is loading in Speak mode */
+  speakingPlaceholder: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    color: 'var(--text-muted, #888)',
+    fontSize: 13,
+    fontStyle: 'italic' as const,
+    animation: 'pulse 1.5s ease-in-out infinite',
   },
 };
