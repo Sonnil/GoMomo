@@ -109,8 +109,6 @@ export async function emailVerificationRoutes(app: FastifyInstance): Promise<voi
       );
       return reply.code(502).send({
         error: 'Unable to send verification email. Please try again shortly.',
-        // Surface provider error for debugging (no PII — only provider message)
-        provider_error: emailResult.error,
       });
     }
 
