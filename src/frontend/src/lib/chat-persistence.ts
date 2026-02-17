@@ -174,3 +174,29 @@ export const _testing = {
   OTP_PATTERN,
   STANDALONE_OTP,
 };
+
+/* ── Interaction Mode persistence ───────────────────────── */
+
+export type InteractionMode = 'chat' | 'speak';
+
+const MODE_KEY = 'gomomo_interaction_mode_v1';
+
+/** Load the user's preferred interaction mode (null = not yet chosen). */
+export function loadInteractionMode(): InteractionMode | null {
+  try {
+    const raw = localStorage.getItem(MODE_KEY);
+    if (raw === 'chat' || raw === 'speak') return raw;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the user's interaction mode preference. */
+export function saveInteractionMode(mode: InteractionMode): void {
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    // localStorage blocked — silently degrade
+  }
+}

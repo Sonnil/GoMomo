@@ -14,9 +14,11 @@ build/
 
 # Postgres data (Docker volume)
 .pg-data/
+.pg-daemon.pid
 
 # Logs
 .logs/
+logs/
 *.log
 npm-debug.log*
 

@@ -341,8 +341,23 @@ describe('preprocessForTTS', () => {
   it('returns empty string for code-only text', async () => {
     const { preprocessForTTS } = await import('../src/voice/ttsProvider.js');
     const result = preprocessForTTS('```\nonly code\n```');
-    // Should be empty or only whitespace/placeholder
-    expect(result.trim().replace('(code omitted)', '').trim()).toBe('');
+    // Code-only input → empty string (nothing speakable)
+    expect(result).toBe('');
+  });
+
+  it('returns empty string for multiple code blocks with no prose', async () => {
+    const { preprocessForTTS } = await import('../src/voice/ttsProvider.js');
+    const result = preprocessForTTS('```js\nconst a = 1;\n```\n```py\nprint("hi")\n```');
+    expect(result).toBe('');
+  });
+
+  it('mixed text+code keeps prose with placeholder', async () => {
+    const { preprocessForTTS } = await import('../src/voice/ttsProvider.js');
+    const result = preprocessForTTS('Here is an example: ```js\nconsole.log("hi")\n``` Try it out!');
+    expect(result).toContain('Here is an example:');
+    expect(result).toContain('(code example omitted)');
+    expect(result).toContain('Try it out!');
+    expect(result).not.toContain('```');
   });
 
   it('preserves normal text', async () => {

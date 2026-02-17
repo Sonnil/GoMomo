@@ -6,6 +6,7 @@ import { agentTools, debugAvailabilityTool, type ToolName } from './tools.js';
 import { executeToolCall } from './tool-executor.js';
 import { postProcessResponse } from './response-post-processor.js';
 import type { Tenant, ConversationMessage, ReturningCustomerContext, CustomerIdentity } from '../domain/types.js';
+import type { DatetimeResolverResult } from './datetime-resolver.js';
 import { sessionRepo } from '../repos/session.repo.js';
 import { normalizePhone } from '../voice/phone-normalizer.js';
 import { routeStorefrontQuestion, buildStorefrontContextPrompt } from '../storefront/router.js';
@@ -53,10 +54,19 @@ export interface ChatHandlerOptions {
   verifiedEmail?: string | null;
   /** Full customer identity from a verified session (email, phone, name). */
   customerIdentity?: CustomerIdentity | null;
+  /** Client timezone / locale metadata from the widget. */
+  clientMeta?: {
+    client_now_iso?: string;
+    client_tz?: string;
+    client_utc_offset_minutes?: number;
+    locale?: string;
+  };
   /** Streaming: called for each text token as it arrives from OpenAI. */
   onToken?: (token: string) => void;
   /** Streaming: called when the agent starts executing a tool. */
   onStatus?: (phase: string, detail: string) => void;
+  /** Deterministic date/time resolved from the user message (booking intents only). */
+  resolvedDatetime?: DatetimeResolverResult | null;
 }
 
 export async function handleChatMessage(
@@ -81,6 +91,7 @@ export async function handleChatMessage(
         channel: options.channel,
         verifiedEmail: options.verifiedEmail,
         customerIdentity: options.customerIdentity,
+        clientMeta: options.clientMeta,
       }),
       timestamp: new Date().toISOString(),
     });
@@ -109,6 +120,30 @@ export async function handleChatMessage(
     content: userMessage,
     timestamp: new Date().toISOString(),
   });
+
+  // 3a. Inject deterministic datetime context for booking intents
+  //     When the datetime-resolver produced a result, inject it as a
+  //     system message so the LLM has the absolute ISO timestamp and
+  //     does NOT need to guess what "today at 3pm" means.
+  if (options.resolvedDatetime) {
+    const rd = options.resolvedDatetime;
+    const parts = [
+      `RESOLVED_DATETIME_ISO=${rd.start_iso}`,
+      rd.end_iso ? `RESOLVED_DATETIME_END_ISO=${rd.end_iso}` : null,
+      `CONFIDENCE=${rd.confidence}`,
+      `RESOLUTION_DETAILS: ${rd.reasons.join(', ')}`,
+    ].filter(Boolean).join(' | ');
+
+    conversation.push({
+      role: 'system',
+      content:
+        `[DATETIME RESOLUTION] The user's date/time expression has been ` +
+        `deterministically resolved. Use the following absolute timestamp ` +
+        `when calling check_availability or confirm_booking tools. ` +
+        `Do NOT reinterpret the user's relative time expression.\n${parts}`,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   // 3b. Storefront Knowledge Router (Gomomo platform tenant only)
   //     Routes storefront questions through: facts → approved FAQs → RAG → fallback

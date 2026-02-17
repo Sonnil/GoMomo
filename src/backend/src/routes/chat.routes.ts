@@ -1,12 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { tenantRepo } from '../repos/tenant.repo.js';
-import { handleChatMessage } from '../agent/chat-handler.js';
+import { routeChat } from '../agent/chat-router.js';
 import { customerService } from '../services/customer.service.js';
 import { sessionRepo } from '../repos/session.repo.js';
 import { requireSessionToken, isAuthEnforced } from '../auth/middleware.js';
 import type { SessionTokenPayload } from '../auth/session-token.js';
 import { isRecaptchaEnabled, verifyRecaptcha } from '../auth/recaptcha.js';
-import { env } from '../config/env.js';
 
 export async function chatRoutes(app: FastifyInstance): Promise<void> {
   // POST /api/tenants/:tenantId/chat
@@ -20,6 +19,12 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       customer_email?: string;
       customer_phone?: string;
       recaptcha_token?: string;
+      client_meta?: {
+        client_now_iso?: string;
+        client_tz?: string;
+        client_utc_offset_minutes?: number;
+        locale?: string;
+      };
     };
   }>('/api/tenants/:tenantId/chat', {
     preHandler: requireSessionToken,
@@ -68,21 +73,7 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    // ── Email Gate Check ──────────────────────────────────
-    if (env.REQUIRE_EMAIL_AFTER_FIRST_MESSAGE === 'true') {
-      const isVerified = await sessionRepo.isEmailVerified(session_id);
-      if (!isVerified) {
-        const msgCount = await sessionRepo.incrementMessageCount(session_id);
-        if (msgCount > 1) {
-          return reply.code(403).send({
-            error: 'Email verification required to continue the conversation.',
-            email_gate_required: true,
-            session_id,
-            message_count: msgCount,
-          });
-        }
-      }
-    }
+    // ── Email Gate — handled by FSM in routeChat ──────────
 
     // ── Trial Message Cap — REMOVED (Phase 14: unlimited chat) ──
 
@@ -103,9 +94,10 @@ export async function chatRoutes(app: FastifyInstance): Promise<void> {
       } catch { /* best-effort */ }
     }
 
-    const { response, meta } = await handleChatMessage(session_id, tenant.id, message, tenant, {
+    const result = await routeChat(session_id, tenant.id, message, tenant, {
       customerContext,
+      clientMeta: req.body.client_meta,
     });
-    return { session_id, response, meta };
+    return { session_id, response: result.response, meta: result.meta };
   });
 }
