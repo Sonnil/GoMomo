@@ -775,3 +775,264 @@ describe('Full FSM Flow — end-to-end (mocked)', () => {
     expect(createMock).not.toHaveBeenCalled();
   });
 });
+
+// ============================================================
+// F. Datetime resolver fires in EMAIL_VERIFIED state
+//    Regression: after OTP verification, "4pm on friday" was NOT
+//    resolved because the gating condition only checked BOOKING_FLOW.
+// ============================================================
+
+describe('routeChat — datetime resolver fires in EMAIL_VERIFIED state', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('"4pm on friday" in EMAIL_VERIFIED state → resolveDatetime is called', async () => {
+    // Session already in EMAIL_VERIFIED state (post-OTP)
+    const verifiedSession = makeSession({
+      metadata: {
+        fsm: {
+          state: 'EMAIL_VERIFIED',
+          pendingEmail: null,
+          verifiedEmail: 'user@demo.com',
+          otpAttempts: 1,
+          otpSentAt: new Date().toISOString(),
+        },
+      },
+      email_verified: true,
+      conversation: [
+        { role: 'system', content: 'system prompt', timestamp: new Date().toISOString() },
+      ],
+    });
+
+    vi.doMock('../src/repos/session.repo.js', () => ({
+      sessionRepo: {
+        findOrCreate: vi.fn().mockResolvedValue(verifiedSession),
+        findById: vi.fn().mockResolvedValue(verifiedSession),
+        updateConversation: vi.fn().mockResolvedValue(undefined),
+        updateMetadata: vi.fn().mockResolvedValue(undefined),
+        markEmailVerified: vi.fn().mockResolvedValue(undefined),
+        linkCustomer: vi.fn().mockResolvedValue(undefined),
+        isEmailVerified: vi.fn().mockResolvedValue(true),
+        getCustomerIdentity: vi.fn().mockResolvedValue(null),
+        incrementMessageCount: vi.fn().mockResolvedValue(2),
+      },
+    }));
+
+    vi.doMock('../src/config/env.js', () => ({
+      env: {
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_BASE_URL: undefined,
+        OPENAI_MODEL: 'gpt-4o',
+        CALENDAR_DEBUG: 'false',
+        BOOKING_FAR_DATE_CONFIRM_DAYS: 0,
+        FOLLOWUP_MAX_PER_BOOKING: 3,
+        FOLLOWUP_COOLDOWN_MINUTES: 30,
+        NODE_ENV: 'test',
+        EMAIL_VERIFICATION_RATE_LIMIT: '5',
+        EMAIL_VERIFICATION_TTL_MINUTES: '15',
+        REQUIRE_EMAIL_AFTER_FIRST_MESSAGE: 'false',
+      },
+    }));
+
+    vi.doMock('../src/repos/email-verification.repo.js', () => ({
+      emailVerificationRepo: {
+        create: vi.fn().mockResolvedValue({ code: '123456' }),
+        verify: vi.fn().mockResolvedValue(true),
+        countRecent: vi.fn().mockResolvedValue(0),
+      },
+      validateEmail: vi.fn().mockReturnValue(null),
+    }));
+
+    vi.doMock('../src/email/transport.js', () => ({
+      sendVerificationEmail: vi.fn().mockResolvedValue({ success: true }),
+    }));
+
+    vi.doMock('../src/services/customer.service.js', () => ({
+      customerService: {
+        resolveByEmail: vi.fn().mockResolvedValue({ customer: { id: 'cust-1' }, created: false }),
+        resolveByPhone: vi.fn().mockResolvedValue({ customer: { id: 'cust-1' }, created: false }),
+        getReturningContext: vi.fn().mockResolvedValue(null),
+      },
+    }));
+
+    vi.doMock('../src/services/availability.service.js', () => ({
+      isDemoAvailabilityActive: () => false,
+    }));
+
+    vi.doMock('../src/agent/response-post-processor.js', () => ({
+      postProcessResponse: (text: string) => text,
+    }));
+
+    vi.doMock('../src/voice/phone-normalizer.js', () => ({
+      normalizePhone: (p: string) => p,
+    }));
+
+    vi.doMock('../src/storefront/faq-repo.js', () => ({
+      findApprovedAnswer: async () => null,
+      logUnansweredFaq: async () => ({}),
+    }));
+
+    // Spy on resolveDatetime — this is the function under test
+    const resolveDatetimeSpy = vi.fn().mockReturnValue({
+      start_iso: '2026-02-20T21:00:00.000Z',  // Friday 4pm ET
+      end_iso: '2026-02-20T22:00:00.000Z',
+      confidence: 'high' as const,
+      reasons: ['day=friday', 'time=16:00'],
+    });
+    vi.doMock('../src/agent/datetime-resolver.js', () => ({
+      resolveDatetime: resolveDatetimeSpy,
+    }));
+
+    // Mock OpenAI streaming response (PASS_TO_LLM path)
+    const { createMockStream } = await import('./helpers/mock-openai-stream.js');
+    vi.doMock('openai', () => ({
+      default: class {
+        chat = {
+          completions: {
+            create: vi.fn().mockResolvedValue(
+              createMockStream('Sure! Let me check availability for Friday at 4 PM.'),
+            ),
+          },
+        };
+      },
+    }));
+
+    const { routeChat } = await import('../src/agent/chat-router.js');
+
+    const result = await routeChat('sess-dt-test', mockTenant.id, '4pm on friday', mockTenant);
+
+    // The message should have gone through LLM (not deterministic)
+    expect(result.deterministic).toBe(false);
+
+    // resolveDatetime MUST have been called — this is the regression test
+    expect(resolveDatetimeSpy).toHaveBeenCalledTimes(1);
+    expect(resolveDatetimeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userMessage: '4pm on friday',
+        tenantTimezone: 'America/New_York',
+      }),
+    );
+  });
+
+  it('"4pm on friday" in BOOKING_FLOW state → resolveDatetime is also called', async () => {
+    // Verify the existing BOOKING_FLOW path still works
+    const bookingSession = makeSession({
+      metadata: {
+        fsm: {
+          state: 'BOOKING_FLOW',
+          pendingEmail: null,
+          verifiedEmail: 'user@demo.com',
+          otpAttempts: 1,
+          otpSentAt: new Date().toISOString(),
+        },
+      },
+      email_verified: true,
+      conversation: [
+        { role: 'system', content: 'system prompt', timestamp: new Date().toISOString() },
+      ],
+    });
+
+    vi.doMock('../src/repos/session.repo.js', () => ({
+      sessionRepo: {
+        findOrCreate: vi.fn().mockResolvedValue(bookingSession),
+        findById: vi.fn().mockResolvedValue(bookingSession),
+        updateConversation: vi.fn().mockResolvedValue(undefined),
+        updateMetadata: vi.fn().mockResolvedValue(undefined),
+        markEmailVerified: vi.fn().mockResolvedValue(undefined),
+        linkCustomer: vi.fn().mockResolvedValue(undefined),
+        isEmailVerified: vi.fn().mockResolvedValue(true),
+        getCustomerIdentity: vi.fn().mockResolvedValue(null),
+        incrementMessageCount: vi.fn().mockResolvedValue(3),
+      },
+    }));
+
+    vi.doMock('../src/config/env.js', () => ({
+      env: {
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_BASE_URL: undefined,
+        OPENAI_MODEL: 'gpt-4o',
+        CALENDAR_DEBUG: 'false',
+        BOOKING_FAR_DATE_CONFIRM_DAYS: 0,
+        FOLLOWUP_MAX_PER_BOOKING: 3,
+        FOLLOWUP_COOLDOWN_MINUTES: 30,
+        NODE_ENV: 'test',
+        EMAIL_VERIFICATION_RATE_LIMIT: '5',
+        EMAIL_VERIFICATION_TTL_MINUTES: '15',
+        REQUIRE_EMAIL_AFTER_FIRST_MESSAGE: 'false',
+      },
+    }));
+
+    vi.doMock('../src/repos/email-verification.repo.js', () => ({
+      emailVerificationRepo: {
+        create: vi.fn().mockResolvedValue({ code: '123456' }),
+        verify: vi.fn().mockResolvedValue(true),
+        countRecent: vi.fn().mockResolvedValue(0),
+      },
+      validateEmail: vi.fn().mockReturnValue(null),
+    }));
+
+    vi.doMock('../src/email/transport.js', () => ({
+      sendVerificationEmail: vi.fn().mockResolvedValue({ success: true }),
+    }));
+
+    vi.doMock('../src/services/customer.service.js', () => ({
+      customerService: {
+        resolveByEmail: vi.fn().mockResolvedValue({ customer: { id: 'cust-1' }, created: false }),
+        resolveByPhone: vi.fn().mockResolvedValue({ customer: { id: 'cust-1' }, created: false }),
+        getReturningContext: vi.fn().mockResolvedValue(null),
+      },
+    }));
+
+    vi.doMock('../src/services/availability.service.js', () => ({
+      isDemoAvailabilityActive: () => false,
+    }));
+
+    vi.doMock('../src/agent/response-post-processor.js', () => ({
+      postProcessResponse: (text: string) => text,
+    }));
+
+    vi.doMock('../src/voice/phone-normalizer.js', () => ({
+      normalizePhone: (p: string) => p,
+    }));
+
+    vi.doMock('../src/storefront/faq-repo.js', () => ({
+      findApprovedAnswer: async () => null,
+      logUnansweredFaq: async () => ({}),
+    }));
+
+    const resolveDatetimeSpy = vi.fn().mockReturnValue({
+      start_iso: '2026-02-20T21:00:00.000Z',
+      end_iso: '2026-02-20T22:00:00.000Z',
+      confidence: 'high' as const,
+      reasons: ['day=friday', 'time=16:00'],
+    });
+    vi.doMock('../src/agent/datetime-resolver.js', () => ({
+      resolveDatetime: resolveDatetimeSpy,
+    }));
+
+    const { createMockStream } = await import('./helpers/mock-openai-stream.js');
+    vi.doMock('openai', () => ({
+      default: class {
+        chat = {
+          completions: {
+            create: vi.fn().mockResolvedValue(
+              createMockStream('Checking Friday 4 PM availability...'),
+            ),
+          },
+        };
+      },
+    }));
+
+    const { routeChat } = await import('../src/agent/chat-router.js');
+
+    const result = await routeChat('sess-dt-bf', mockTenant.id, '4pm on friday', mockTenant);
+
+    expect(result.deterministic).toBe(false);
+    expect(resolveDatetimeSpy).toHaveBeenCalledTimes(1);
+  });
+});

@@ -89,10 +89,18 @@ export async function routeChat(
   //     Run resolver when the message will reach the LLM in a booking context.
   //     This ensures "today at 3pm" is resolved to an absolute ISO before
   //     the LLM sees it, eliminating timezone/date misinterpretation.
+  //     EMAIL_VERIFIED is included because after OTP verification the user
+  //     may supply a date/time (e.g. "4pm on friday") before the intent
+  //     classifier tags it as BOOK_DEMO — the FSM keeps state=EMAIL_VERIFIED
+  //     and nextState=EMAIL_VERIFIED, so without this gate the resolver
+  //     would never run and the LLM would hallucinate the date.
   let resolvedDatetime: DatetimeResolverResult | null = null;
   if (
     action.type === 'PASS_TO_LLM' &&
-    (intent === 'BOOK_DEMO' || action.nextState === 'BOOKING_FLOW' || fsmCtx.state === 'BOOKING_FLOW')
+    (intent === 'BOOK_DEMO' ||
+      action.nextState === 'BOOKING_FLOW' ||
+      fsmCtx.state === 'BOOKING_FLOW' ||
+      fsmCtx.state === 'EMAIL_VERIFIED')
   ) {
     resolvedDatetime = resolveDatetime({
       userMessage,

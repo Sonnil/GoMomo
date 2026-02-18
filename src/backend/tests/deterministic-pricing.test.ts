@@ -9,6 +9,7 @@
 // ============================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createMockStream } from './helpers/mock-openai-stream.js';
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -297,16 +298,9 @@ describe('Deterministic Pricing — Non-Gomomo Tenant', () => {
   it('pricing question for non-gomomo tenant DOES call LLM (no storefront bypass)', async () => {
     setupBaseMocks();
 
-    const createMock = vi.fn().mockResolvedValue({
-      choices: [{
-        message: {
-          role: 'assistant',
-          content: 'Our pricing varies by service.',
-          tool_calls: undefined,
-        },
-        finish_reason: 'stop',
-      }],
-    });
+    const createMock = vi.fn().mockResolvedValue(
+      createMockStream('Our pricing varies by service.'),
+    );
 
     vi.doMock('openai', () => ({
       default: class {

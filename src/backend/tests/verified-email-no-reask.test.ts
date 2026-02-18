@@ -30,6 +30,7 @@
 // ============================================================
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createMockStream } from './helpers/mock-openai-stream.js';
 
 // ── Shared mock tenant ────────────────────────────────────
 
@@ -276,12 +277,9 @@ describe('handleChatMessage — verified identity injection', () => {
       default: class {
         chat = {
           completions: {
-            create: vi.fn().mockResolvedValue({
-              choices: [{
-                message: { role: 'assistant', content: 'Great, I have your email. What is your name?', tool_calls: undefined },
-                finish_reason: 'stop',
-              }],
-            }),
+            create: vi.fn().mockResolvedValue(
+              createMockStream('Great, I have your email. What is your name?'),
+            ),
           },
         };
       },
@@ -353,12 +351,9 @@ describe('handleChatMessage — verified identity injection', () => {
       default: class {
         chat = {
           completions: {
-            create: vi.fn().mockResolvedValue({
-              choices: [{
-                message: { role: 'assistant', content: 'Let me check availability.', tool_calls: undefined },
-                finish_reason: 'stop',
-              }],
-            }),
+            create: vi.fn().mockResolvedValue(
+              createMockStream('Let me check availability.'),
+            ),
           },
         };
       },
@@ -428,12 +423,9 @@ describe('handleChatMessage — verified identity injection', () => {
       default: class {
         chat = {
           completions: {
-            create: vi.fn().mockResolvedValue({
-              choices: [{
-                message: { role: 'assistant', content: 'Let me check.', tool_calls: undefined },
-                finish_reason: 'stop',
-              }],
-            }),
+            create: vi.fn().mockResolvedValue(
+              createMockStream('Let me check.'),
+            ),
           },
         };
       },
@@ -499,12 +491,9 @@ describe('handleChatMessage — verified identity injection', () => {
       default: class {
         chat = {
           completions: {
-            create: vi.fn().mockResolvedValue({
-              choices: [{
-                message: { role: 'assistant', content: 'Welcome! How can I help?', tool_calls: undefined },
-                finish_reason: 'stop',
-              }],
-            }),
+            create: vi.fn().mockResolvedValue(
+              createMockStream('Welcome! How can I help?'),
+            ),
           },
         };
       },
