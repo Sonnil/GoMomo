@@ -311,7 +311,7 @@ const envSchema = z.object({
   // 0 = unlimited (no cap). Default: 0 — chat is unlimited.
   TRIAL_MAX_USER_MESSAGES: z.coerce.number().default(0),
   // Session-level booking counter (analytics only).
-  // Rate limit is enforced via 1-per-hour query in confirm_booking.
+  // Rate limit is enforced via behavioral risk engine in confirm_booking.
   TRIAL_MAX_BOOKINGS: z.coerce.number().default(1),
 }).superRefine((data, ctx) => {
   const isDev = data.NODE_ENV === 'development' || data.NODE_ENV === 'test';

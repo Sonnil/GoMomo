@@ -29,7 +29,7 @@ export async function executeToolCall(
   try {
     switch (toolName) {
       case 'check_availability':
-        return await handleCheckAvailability(tenant, args as any);
+        return await handleCheckAvailability(tenantId, sessionId, tenant, args as any);
 
       case 'hold_slot':
         return await handleHoldSlot(tenantId, sessionId, tenant, args as any);
@@ -68,6 +68,8 @@ export async function executeToolCall(
 }
 
 async function handleCheckAvailability(
+  tenantId: string,
+  sessionId: string,
   tenant: Tenant,
   args: { start_date: string; end_date: string; service_name?: string },
 ): Promise<ToolResult> {
@@ -76,6 +78,33 @@ async function handleCheckAvailability(
 
   if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
     return { success: false, error: 'Invalid date format. Use ISO-8601.' };
+  }
+
+  // ── Behavioral risk check (excessive availability probing) ──
+  // Gracefully degrade: if DB/risk query fails, allow the request through.
+  try {
+    const { query } = await import('../db/client.js');
+    const { buildRiskContext, calculateRiskScore, getRiskDecision } =
+      await import('../security/risk-engine.js');
+    // No email known yet — use empty string; scoring relies on session-level signals
+    const riskCtx = await buildRiskContext({ query }, {
+      email: '',
+      tenantId,
+      sessionId,
+    });
+    const riskScore = calculateRiskScore(riskCtx);
+    const riskDecision = getRiskDecision(riskScore);
+
+    if (riskDecision.action === 'cooldown') {
+      const secs = riskDecision.cooldownSeconds ?? 300;
+      const mins = Math.ceil(secs / 60);
+      return {
+        success: false,
+        error: `RISK_COOLDOWN: We've noticed unusual activity on this session. Please wait about ${mins} minute${mins === 1 ? '' : 's'} before trying again.`,
+      };
+    }
+  } catch {
+    // Risk check is best-effort for availability queries — don't block on failure.
   }
 
   // ── Guardrail 1a: Service disambiguation ────────────────
@@ -219,6 +248,8 @@ async function handleConfirmBooking(
   const { normalizePhone } = await import('../voice/phone-normalizer.js');
   const { auditRepo: auditLog } = await import('../repos/audit.repo.js');
   const { query } = await import('../db/client.js');
+  const { buildRiskContext, getRiskDecision, calculateRiskScore, getExistingActiveBookings } =
+    await import('../security/risk-engine.js');
 
   // ── Email Verification Gate ────────────────────────────
   // Booking requires a verified email session. If the user
@@ -250,26 +281,56 @@ async function handleConfirmBooking(
     }
   }
 
-  // ── Booking Rate Limit: 1 per hour per email ───────────
-  // Query appointments table directly — no migration needed.
-  const rateLimitResult = await query(
-    `SELECT created_at FROM appointments
-     WHERE client_email = $1
-       AND tenant_id = $2
-       AND status != 'cancelled'
-       AND created_at > NOW() - INTERVAL '1 hour'
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [args.client_email, tenantId],
-  );
-  if (rateLimitResult.rows.length > 0) {
-    const lastBookedAt = new Date(rateLimitResult.rows[0].created_at);
-    const retryAfterMs = 60 * 60 * 1000 - (Date.now() - lastBookedAt.getTime());
-    const retryAfterMinutes = Math.ceil(retryAfterMs / 60000);
+  // ── Behavioral Risk Assessment ─────────────────────────
+  const riskCtx = await buildRiskContext({ query }, {
+    email: args.client_email,
+    tenantId,
+    sessionId,
+  });
+  const riskScore = calculateRiskScore(riskCtx);
+  const riskDecision = getRiskDecision(riskScore);
+
+  // Audit the risk decision regardless of outcome
+  await auditLog.log({
+    tenant_id: tenantId,
+    event_type: 'booking.risk_assessed',
+    entity_type: 'session',
+    entity_id: sessionId,
+    actor: 'confirm_booking',
+    payload: {
+      email: args.client_email,
+      score: riskScore,
+      action: riskDecision.action,
+      reason: riskDecision.reason,
+    },
+  });
+
+  if (riskDecision.action === 'cooldown') {
+    const secs = riskDecision.cooldownSeconds ?? 300;
+    const mins = Math.ceil(secs / 60);
     return {
       success: false,
-      error: `BOOKING_RATE_LIMITED: You can only book once per hour. Please try again in ${retryAfterMinutes} minute${retryAfterMinutes !== 1 ? 's' : ''}.`,
+      error: `RISK_COOLDOWN: We've noticed unusual activity on this session. For your security, please wait about ${mins} minute${mins === 1 ? '' : 's'} before trying again.`,
     };
+  }
+
+  if (riskDecision.action === 'reverify') {
+    return {
+      success: false,
+      error: 'RISK_REVERIFY: For your security, we need to re-verify your email address before completing this booking. Please confirm your email so we can send a new verification code.',
+    };
+  }
+
+  // ── Existing-booking awareness (informational, not blocking) ──
+  const existingBookings = await getExistingActiveBookings({ query }, args.client_email, tenantId);
+  let existingBookingSummary: string | undefined;
+  if (existingBookings.length > 0) {
+    const summaryLines = existingBookings.map(
+      (b) => `  • ${b.reference_code} on ${b.start_time}${b.service ? ` (${b.service})` : ''}`,
+    );
+    existingBookingSummary =
+      `Note: This client already has ${existingBookings.length} upcoming booking(s):\n` +
+      summaryLines.join('\n');
   }
 
   // ── Guardrail: phone is REQUIRED for all new bookings ──
@@ -362,6 +423,7 @@ async function handleConfirmBooking(
       timezone: tenant.timezone,
       add_to_calendar_url: addToCalendarUrl,
       sms_status: smsStatus,
+      ...(existingBookingSummary ? { existing_booking_note: existingBookingSummary } : {}),
       message: smsStatus === 'will_send'
         ? 'Appointment confirmed! A confirmation SMS is being sent to the phone number provided.'
         : smsStatus === 'unavailable'

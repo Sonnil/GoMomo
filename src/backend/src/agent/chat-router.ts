@@ -208,6 +208,38 @@ async function executeAction(
         };
       }
 
+      // ── Behavioral risk check (OTP abuse detection) ──
+      // Best-effort: if risk check fails (e.g. DB unavailable), allow through.
+      try {
+        const { query } = await import('../db/client.js');
+        const { buildRiskContext, calculateRiskScore, getRiskDecision } =
+          await import('../security/risk-engine.js');
+        const riskCtx = await buildRiskContext({ query }, {
+          email,
+          tenantId: ctx.tenantId,
+          sessionId: ctx.sessionId,
+        });
+        const riskScore = calculateRiskScore(riskCtx);
+        const riskDecision = getRiskDecision(riskScore);
+
+        if (riskDecision.action === 'cooldown') {
+          const secs = riskDecision.cooldownSeconds ?? 300;
+          const mins = Math.ceil(secs / 60);
+          const response = `We've noticed unusual activity on this session. For your security, please wait about ${mins} minute${mins === 1 ? '' : 's'} before requesting another code.`;
+          const newMeta = setFsmContext(ctx.metadata, updatedCtx);
+          await sessionRepo.updateMetadata(ctx.sessionId, newMeta);
+          await appendToConversation(ctx.sessionId, ctx.userMessage, response);
+          return {
+            response,
+            meta: { tools_used: [], has_async_job: false },
+            deterministic: true,
+            fsmContext: updatedCtx,
+          };
+        }
+      } catch {
+        // Risk check is best-effort for OTP send — don't block on failure.
+      }
+
       // Create OTP and send email
       const result = await emailVerificationRepo.create(email, ctx.sessionId, ctx.tenantId);
       const emailResult = await sendVerificationEmail(
