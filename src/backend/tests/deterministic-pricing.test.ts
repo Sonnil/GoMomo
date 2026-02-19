@@ -297,16 +297,23 @@ describe('Deterministic Pricing — Non-Gomomo Tenant', () => {
   it('pricing question for non-gomomo tenant DOES call LLM (no storefront bypass)', async () => {
     setupBaseMocks();
 
-    const createMock = vi.fn().mockResolvedValue({
-      choices: [{
-        message: {
-          role: 'assistant',
-          content: 'Our pricing varies by service.',
-          tool_calls: undefined,
+    // Build a mock async-iterable stream matching the OpenAI streaming shape
+    function mockStream(content: string) {
+      const chunks = [
+        { choices: [{ delta: { content }, finish_reason: null }] },
+        { choices: [{ delta: {}, finish_reason: 'stop' }] },
+      ];
+      return {
+        [Symbol.asyncIterator]() {
+          let i = 0;
+          return { async next() { return i < chunks.length ? { value: chunks[i++], done: false } : { value: undefined as any, done: true }; } };
         },
-        finish_reason: 'stop',
-      }],
-    });
+      };
+    }
+
+    const createMock = vi.fn().mockResolvedValue(
+      mockStream('Our pricing varies by service.'),
+    );
 
     vi.doMock('openai', () => ({
       default: class {

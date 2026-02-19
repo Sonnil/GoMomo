@@ -17,10 +17,10 @@ report_gate() {
   local gate="$1" result="$2" detail="$3"
   if [[ "$result" == "PASS" ]]; then
     GATE_RESULTS+=("  ✅ Gate $gate: $detail")
-    ((PASS++))
+    PASS=$((PASS + 1))
   else
     GATE_RESULTS+=("  ❌ Gate $gate: $detail")
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 }
 
@@ -60,20 +60,28 @@ echo "▸ Gate 2: Full Test Suite"
 G2_OK=true
 
 echo "  Running backend tests..."
-if (cd "$PROJ_ROOT/src/backend" && npx vitest run --reporter=verbose 2>&1 | tail -5); then
+G2_BACKEND_LOG=$(mktemp)
+if (cd "$PROJ_ROOT/src/backend" && npx vitest run --reporter=verbose 2>&1 > "$G2_BACKEND_LOG"); then
+  tail -5 "$G2_BACKEND_LOG"
   echo "  ✓ Backend tests passed"
 else
+  tail -20 "$G2_BACKEND_LOG"
   echo "  ✗ Backend tests FAILED"
   G2_OK=false
 fi
+rm -f "$G2_BACKEND_LOG"
 
 echo "  Running frontend tests..."
-if (cd "$PROJ_ROOT/src/frontend" && npx vitest run --reporter=verbose 2>&1 | tail -5); then
+G2_FRONTEND_LOG=$(mktemp)
+if (cd "$PROJ_ROOT/src/frontend" && npx vitest run --reporter=verbose 2>&1 > "$G2_FRONTEND_LOG"); then
+  tail -5 "$G2_FRONTEND_LOG"
   echo "  ✓ Frontend tests passed"
 else
+  tail -20 "$G2_FRONTEND_LOG"
   echo "  ✗ Frontend tests FAILED"
   G2_OK=false
 fi
+rm -f "$G2_FRONTEND_LOG"
 
 if $G2_OK; then
   report_gate "2" "PASS" "All tests passed (backend + frontend)"
@@ -88,20 +96,28 @@ echo "▸ Gate 3: Deterministic E2E Tests"
 G3_OK=true
 
 echo "  Running e2e-error-verification..."
-if (cd "$PROJ_ROOT/src/backend" && npx vitest run tests/e2e-error-verification.test.ts 2>&1 | tail -3); then
+G3_E2E_LOG=$(mktemp)
+if (cd "$PROJ_ROOT/src/backend" && npx vitest run tests/e2e-error-verification.test.ts 2>&1 > "$G3_E2E_LOG"); then
+  tail -3 "$G3_E2E_LOG"
   echo "  ✓ e2e-error-verification passed"
 else
+  tail -10 "$G3_E2E_LOG"
   echo "  ✗ e2e-error-verification FAILED"
   G3_OK=false
 fi
+rm -f "$G3_E2E_LOG"
 
 echo "  Running error-mapping..."
-if (cd "$PROJ_ROOT/src/backend" && npx vitest run tests/error-mapping.test.ts 2>&1 | tail -3); then
+G3_MAP_LOG=$(mktemp)
+if (cd "$PROJ_ROOT/src/backend" && npx vitest run tests/error-mapping.test.ts 2>&1 > "$G3_MAP_LOG"); then
+  tail -3 "$G3_MAP_LOG"
   echo "  ✓ error-mapping passed"
 else
+  tail -10 "$G3_MAP_LOG"
   echo "  ✗ error-mapping FAILED"
   G3_OK=false
 fi
+rm -f "$G3_MAP_LOG"
 
 if $G3_OK; then
   report_gate "3" "PASS" "All deterministic E2E tests passed"
@@ -115,11 +131,15 @@ echo ""
 echo "▸ Gate 4: Next.js Production Build"
 
 echo "  Running next build..."
-if (cd "$PROJ_ROOT/src/web" && npm run build 2>&1 | tail -10); then
+G4_LOG=$(mktemp)
+if (cd "$PROJ_ROOT/src/web" && npm run build 2>&1 > "$G4_LOG"); then
+  tail -10 "$G4_LOG"
   report_gate "4" "PASS" "Next.js build succeeded"
 else
+  tail -20 "$G4_LOG"
   report_gate "4" "FAIL" "Next.js build failed"
 fi
+rm -f "$G4_LOG"
 echo ""
 
 # ─── Summary ─────────────────────────────────────────

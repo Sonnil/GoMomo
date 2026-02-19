@@ -180,7 +180,7 @@ describe('POST /api/tts — input validation', () => {
     await app.close();
   });
 
-  it('returns 400 when text is only code blocks', async () => {
+  it('synthesizes placeholder when text is only code blocks', async () => {
     const app = await buildApp();
 
     const res = await app.inject({
@@ -189,8 +189,9 @@ describe('POST /api/tts — input validation', () => {
       payload: { text: '```js\nconsole.log("hello");\n```' },
     });
 
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toContain('empty after preprocessing');
+    // Code-only text is replaced with "(code example omitted)" placeholder,
+    // which is valid non-empty text → TTS synthesizes it → 200
+    expect(res.statusCode).toBe(200);
 
     await app.close();
   });
@@ -342,7 +343,7 @@ describe('preprocessForTTS', () => {
     const { preprocessForTTS } = await import('../src/voice/ttsProvider.js');
     const result = preprocessForTTS('```\nonly code\n```');
     // Should be empty or only whitespace/placeholder
-    expect(result.trim().replace('(code omitted)', '').trim()).toBe('');
+    expect(result.trim().replace('(code example omitted)', '').trim()).toBe('');
   });
 
   it('preserves normal text', async () => {
