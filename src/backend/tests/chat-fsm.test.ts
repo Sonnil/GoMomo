@@ -623,8 +623,9 @@ describe('Booking Gate — cannot book without verified email', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('EMAIL_MISMATCH');
-    expect(result.error).toContain('different@test.com');
-    expect(result.error).toContain('verified@test.com');
+    // Emails are now masked: first 2 chars + "***@domain"
+    expect(result.error).toContain('di***@test.com');
+    expect(result.error).toContain('ve***@test.com');
   });
 });
 

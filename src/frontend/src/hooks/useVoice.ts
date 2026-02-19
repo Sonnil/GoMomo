@@ -42,10 +42,6 @@ export interface UseVoiceOptions {
   autoSpeak?: boolean;
   /** Seconds of silence before auto-stopping (default: 3) */
   silenceTimeout?: number;
-  /** Called when TTS audio actually starts playing (after fetch + decode) */
-  onSpeakStart?: () => void;
-  /** Called when TTS audio finishes or fails */
-  onSpeakEnd?: () => void;
 }
 
 export interface UseVoiceReturn {
@@ -69,10 +65,6 @@ export interface UseVoiceReturn {
   conversationMode: boolean;
   /** Enter or exit conversation mode */
   toggleConversationMode: () => void;
-  /** Whether the audio element has been unlocked for iOS playback */
-  audioUnlocked: boolean;
-  /** Unlock audio playback — must be called inside a user-gesture handler (click/tap) */
-  unlockAudio: () => void;
 }
 
 // ── Constants ───────────────────────────────────────────────
@@ -85,14 +77,6 @@ const SILENCE_THRESHOLD = 0.015;
 
 /** How often to check audio level (ms) */
 const SILENCE_CHECK_INTERVAL_MS = 200;
-
-/**
- * Tiny silent WAV (44 bytes, 1 sample, 8-bit mono 8 kHz).
- * Playing this inside a click handler satisfies iOS Safari's
- * user-gesture requirement for HTMLAudioElement.play().
- */
-const SILENT_WAV_DATA_URI =
-  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAABCxAgABAAgAZGF0YQAAAAA=';
 
 function getRecorderMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return '';
@@ -169,13 +153,10 @@ export function useVoice({
   onTranscript,
   autoSpeak,
   silenceTimeout = 3,
-  onSpeakStart,
-  onSpeakEnd,
 }: UseVoiceOptions): UseVoiceReturn {
   const [state, setState] = useState<VoiceState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [conversationMode, setConversationMode] = useState(false);
-  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
   // ── Stable ref for current state — avoids cascading useCallback invalidation ──
   const stateRef = useRef<VoiceState>(state);
@@ -194,22 +175,10 @@ export function useVoice({
   /** Ref to startRecording so TTS onended can auto-restart recording */
   const startRecordingRef = useRef<(() => void) | null>(null);
 
-  // ── Stable refs for TTS callbacks (avoid re-creating speak) ──
-  const onSpeakStartRef = useRef(onSpeakStart);
-  useEffect(() => { onSpeakStartRef.current = onSpeakStart; }, [onSpeakStart]);
-  const onSpeakEndRef = useRef(onSpeakEnd);
-  useEffect(() => { onSpeakEndRef.current = onSpeakEnd; }, [onSpeakEnd]);
-
   // ── Neural TTS Audio element refs ─────────────────────
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsBlobUrlRef = useRef<string | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
-
-  // ── Persistent audio element for iOS unlock ────────────
-  // Created once and reused for all TTS playback so the
-  // user-gesture "unlock" persists across speak() calls.
-  const persistentAudioRef = useRef<HTMLAudioElement | null>(null);
-  const audioUnlockedRef = useRef(false);
 
   const silenceDurationMs = silenceTimeout * 1000;
 
@@ -240,54 +209,17 @@ export function useVoice({
       ttsAbortRef.current.abort();
       ttsAbortRef.current = null;
     }
-    // Stop persistent audio element (but keep it alive for reuse)
-    if (persistentAudioRef.current) {
-      persistentAudioRef.current.pause();
-      persistentAudioRef.current.removeAttribute('src');
-      persistentAudioRef.current.load(); // release media resources
-    }
-    // Legacy: clean up non-persistent element if any
-    if (ttsAudioRef.current && ttsAudioRef.current !== persistentAudioRef.current) {
+    // Stop and release audio element
+    if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
       ttsAudioRef.current.removeAttribute('src');
-      ttsAudioRef.current.load();
+      ttsAudioRef.current.load(); // release media resources
+      ttsAudioRef.current = null;
     }
-    ttsAudioRef.current = null;
     // Revoke blob URL to free memory
     if (ttsBlobUrlRef.current) {
       URL.revokeObjectURL(ttsBlobUrlRef.current);
       ttsBlobUrlRef.current = null;
-    }
-  }, []);
-
-  // ── iOS Audio Unlock ────────────────────────────────────
-  // iOS Safari requires a user-gesture to "unlock" an <audio> element
-  // before it can call .play(). We play a tiny silent WAV from a click
-  // handler, which marks the element as gesture-activated. The same
-  // element is then reused for all subsequent TTS playback.
-  const unlockAudio = useCallback(() => {
-    if (audioUnlockedRef.current) return; // already unlocked
-
-    let el = persistentAudioRef.current;
-    if (!el) {
-      el = new Audio();
-      el.setAttribute('playsinline', 'true');
-      el.preload = 'auto';
-      persistentAudioRef.current = el;
-    }
-
-    el.src = SILENT_WAV_DATA_URI;
-    const playPromise = el.play();
-    if (playPromise && typeof playPromise.then === 'function') {
-      playPromise
-        .then(() => {
-          audioUnlockedRef.current = true;
-          setAudioUnlocked(true);
-          console.info('[useVoice] 🔊 Audio unlocked for iOS playback');
-        })
-        .catch((err: Error) => {
-          console.warn('[useVoice] Audio unlock failed:', err.name, err.message);
-        });
     }
   }, []);
 
@@ -306,12 +238,6 @@ export function useVoice({
       cleanupSilenceDetection();
       // Clean up TTS audio
       cleanupTTSAudio();
-      // Release persistent audio element
-      if (persistentAudioRef.current) {
-        persistentAudioRef.current.pause();
-        persistentAudioRef.current.removeAttribute('src');
-        persistentAudioRef.current = null;
-      }
     };
   }, [cleanupSilenceDetection, cleanupTTSAudio]);
 
@@ -536,7 +462,6 @@ export function useVoice({
           // Non-fatal — just don't speak
           console.warn('[useVoice] TTS request failed:', res.status);
           setState('idle');
-          onSpeakEndRef.current?.();
           return;
         }
 
@@ -544,24 +469,12 @@ export function useVoice({
         const blobUrl = URL.createObjectURL(audioBlob);
         ttsBlobUrlRef.current = blobUrl;
 
-        // Reuse the persistent (gesture-unlocked) audio element if available,
-        // otherwise fall back to creating a new one (works on desktop).
-        let audio: HTMLAudioElement;
-        if (persistentAudioRef.current) {
-          audio = persistentAudioRef.current;
-        } else {
-          audio = new Audio();
-          audio.setAttribute('playsinline', 'true');
-          audio.preload = 'auto';
-          persistentAudioRef.current = audio;
-        }
+        const audio = new Audio(blobUrl);
         ttsAudioRef.current = audio;
 
-        // Wire lifecycle handlers (fresh for each speak call)
         audio.onended = () => {
           cleanupTTSAudio();
           setState('idle');
-          onSpeakEndRef.current?.();
           // In conversation mode, auto-restart recording after TTS finishes
           if (conversationModeRef.current && startRecordingRef.current) {
             // Small delay to let audio resources settle
@@ -576,44 +489,17 @@ export function useVoice({
         audio.onerror = () => {
           cleanupTTSAudio();
           setState('idle');
-          onSpeakEndRef.current?.();
         };
 
-        // Set source and play
-        audio.src = blobUrl;
-
-        try {
-          await audio.play();
-          onSpeakStartRef.current?.();
-        } catch (playErr: unknown) {
-          const err = playErr as Error;
-
-          if (err.name === 'NotAllowedError') {
-            // iOS autoplay restriction — audio element not gesture-unlocked
-            console.warn(
-              '[useVoice] ▶️ play() blocked (NotAllowedError) — audio needs user gesture unlock.',
-              err.message,
-            );
-            audioUnlockedRef.current = false;
-            setAudioUnlocked(false);
-          } else {
-            console.warn('[useVoice] play() failed:', err.name, err.message);
-          }
-          // Immediately fall back: reveal text, don't leave "Speaking…"
-          cleanupTTSAudio();
-          setState('idle');
-          onSpeakEndRef.current?.();
-        }
+        await audio.play();
       } catch (err: unknown) {
         if ((err as Error).name === 'AbortError') {
           // Barge-in — expected, state already handled by caller
-          onSpeakEndRef.current?.();
           return;
         }
         console.warn('[useVoice] TTS error:', err);
         cleanupTTSAudio();
         setState('idle');
-        onSpeakEndRef.current?.();
       }
     },
     [apiUrl, cleanupTTSAudio],
@@ -669,8 +555,6 @@ export function useVoice({
       isSupported,
       conversationMode,
       toggleConversationMode,
-      audioUnlocked,
-      unlockAudio,
     }),
     [
       state,
@@ -683,8 +567,6 @@ export function useVoice({
       isSupported,
       conversationMode,
       toggleConversationMode,
-      audioUnlocked,
-      unlockAudio,
     ],
   );
 }

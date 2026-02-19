@@ -21,7 +21,7 @@ import { inboundSmsRoutes } from './voice/inbound-sms.routes.js';
 import { smsStatusCallbackRoutes } from './voice/sms-status-callback.routes.js';
 import { tenantRepo } from './repos/tenant.repo.js';
 import { holdRepo } from './repos/hold.repo.js';
-import { routeChat } from './agent/chat-router.js';
+import { handleChatMessage } from './agent/chat-handler.js';
 import { startSyncWorker, stopSyncWorker } from './integrations/excel-sync-worker.js';
 import { startReconciliationJob, stopReconciliationJob } from './jobs/excel-reconciliation.js';
 import { isDemoAvailabilityActive } from './services/availability.service.js';
@@ -57,27 +57,6 @@ async function main(): Promise<void> {
   console.log('Running database migrations…');
   await runMigrations();
   console.log('Migrations complete.');
-
-  // 1-seed. Ensure the default demo tenant exists (idempotent — safe to re-run).
-  // The full seed.ts script adds sample appointments and policy rules but requires
-  // manual invocation.  This lightweight upsert ensures the chat widget can always
-  // resolve the hard-coded DEFAULT_TENANT_ID so the demo is never broken on first deploy.
-  {
-    const { pool: seedPool } = await import('./db/client.js');
-    const DEMO_ID = '00000000-0000-4000-a000-000000000001';
-    const result = await seedPool.query(
-      `INSERT INTO tenants (id, name, slug, timezone, slot_duration, business_hours, services, service_catalog_mode)
-       VALUES ($1, 'Gomomo', 'gomomo', 'America/New_York', 30,
-         '{"monday":{"start":"09:00","end":"18:00"},"tuesday":{"start":"09:00","end":"18:00"},"wednesday":{"start":"09:00","end":"18:00"},"thursday":{"start":"09:00","end":"20:00"},"friday":{"start":"09:00","end":"17:00"},"saturday":{"start":"10:00","end":"14:00"},"sunday":null}',
-         '[{"name":"Demo Consultation","duration":30,"price":"$80","description":"Standard appointment"},{"name":"Follow-up Appointment","duration":20,"price":"$50","description":"Progress check"},{"name":"Extended Session","duration":60,"price":"$150","description":"Longer appointment"}]',
-         'free_text')
-       ON CONFLICT (id) DO NOTHING`,
-      [DEMO_ID],
-    );
-    if (result.rowCount === 1) {
-      console.log('🌱 Demo tenant created (Gomomo — 00000000-…-000000000001)');
-    }
-  }
 
   // 1a. Dev-only: ensure the default tenant row matches expected defaults
   await checkDefaultTenantDrift();
@@ -229,10 +208,6 @@ async function main(): Promise<void> {
         connectSrc: ["'self'", 'ws:', 'wss:'],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
-        // Allow blob: URLs for TTS audio playback (new Audio(blobUrl))
-        // and MediaRecorder audio capture (STT)
-        mediaSrc: ["'self'", 'blob:'],
-        workerSrc: ["'self'", 'blob:'],
         frameAncestors,
       },
     },
@@ -259,13 +234,6 @@ async function main(): Promise<void> {
     prefix: '/widget/',
     decorateReply: false,          // avoid conflict if registered elsewhere
     wildcard: false,               // we handle SPA fallback below
-    // Vite hashed assets (assets/*) are safe to cache forever.
-    // index.html must not be cached so deploys take effect immediately.
-    setHeaders(res, filePath) {
-      if (filePath.includes('/assets/')) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      }
-    },
   });
   // SPA fallback: any /widget/* path that doesn't match a real file
   // returns /widget/index.html so client-side routing works.
@@ -663,8 +631,8 @@ async function main(): Promise<void> {
       }
     });
 
-    // Client sends { message, client_meta? }
-    socket.on('message', async (data: { message: string; client_meta?: { client_now_iso?: string; client_tz?: string; client_utc_offset_minutes?: number; locale?: string } }) => {
+    // Client sends { message }
+    socket.on('message', async (data: { message: string }) => {
       if (!tenantId || !sessionId) {
         console.warn(`[ws-msg] ${socket.id} ❌ Message rejected — tenantId=${tenantId} sessionId=${sessionId}`);
         socket.emit('error', { error: 'Must join a tenant first.' });
@@ -672,12 +640,36 @@ async function main(): Promise<void> {
       }
 
       try {
-        // ── Hybrid FSM + LLM Router ─────────────────────────
-        // The chat router handles intent classification, FSM state,
-        // deterministic templates, and OTP flows WITHOUT the LLM.
-        // Only non-deterministic intents fall through to the LLM.
+        // ── Email Gate Check ────────────────────────────────
+        // After the first message+response, require email verification
+        // before allowing further messages.
+        let verifiedEmail: string | null = null;
+        let customerIdentity: import('./domain/types.js').CustomerIdentity | null = null;
+        if (env.REQUIRE_EMAIL_AFTER_FIRST_MESSAGE === 'true') {
+          const { sessionRepo: sessRepo } = await import('./repos/session.repo.js');
+          const isVerified = await sessRepo.isEmailVerified(sessionId);
+          if (!isVerified) {
+            const msgCount = await sessRepo.incrementMessageCount(sessionId);
+            if (msgCount > 1) {
+              // Gate: user has already had their free message
+              socket.emit('email_gate_required', {
+                session_id: sessionId,
+                message: 'Please verify your email to continue the conversation.',
+                message_count: msgCount,
+              });
+              return;
+            }
+          } else {
+            // User is verified — retrieve their full identity so the agent won't re-ask
+            customerIdentity = await sessRepo.getCustomerIdentity(sessionId);
+            verifiedEmail = customerIdentity?.verifiedEmail ?? null;
+          }
+        }
+
+        // ── Trial Message Cap — REMOVED (Phase 14: unlimited chat) ──
 
         socket.emit('typing', { typing: true });
+        socket.emit('status', { phase: 'tool_call', detail: 'Agent is working on it…' });
 
         const tenant = await tenantRepo.findById(tenantId);
         if (!tenant) {
@@ -685,11 +677,11 @@ async function main(): Promise<void> {
           return;
         }
 
-        const result = await routeChat(sessionId, tenantId, data.message, tenant, {
+        const { response, meta } = await handleChatMessage(sessionId, tenantId, data.message, tenant, {
           customerContext: customerReturningContext,
-          clientMeta: data.client_meta,
+          verifiedEmail,
+          customerIdentity,
           onToken: (token: string) => {
-            // Only stream tokens when the LLM is called (not for deterministic responses)
             socket.emit('token', { token });
           },
           onStatus: (phase: string, detail: string) => {
@@ -698,16 +690,12 @@ async function main(): Promise<void> {
         });
 
         // If async jobs were triggered, briefly show a follow-up status chip
-        if (result.meta.has_async_job) {
+        if (meta.has_async_job) {
           socket.emit('status', { phase: 'async_job', detail: 'Scheduling follow-up in progress…' });
         }
 
-        // Send final response (client replaces streamed tokens with this)
-        socket.emit('response', {
-          session_id: sessionId,
-          response: result.response,
-          meta: { ...result.meta, deterministic: result.deterministic },
-        });
+        // Send final post-processed response (client replaces streamed tokens with this)
+        socket.emit('response', { session_id: sessionId, response, meta });
       } catch (err: any) {
         console.error('Chat error:', err);
         socket.emit('error', {

@@ -177,14 +177,19 @@ export const _testing = {
 
 /* ── Interaction Mode persistence ───────────────────────── */
 
+/**
+ * The user's preferred interaction mode: text-based chat or
+ * voice-based speak.  Persisted in localStorage so returning
+ * visitors skip the mode-selection screen.
+ */
 export type InteractionMode = 'chat' | 'speak';
 
-const MODE_KEY = 'gomomo_interaction_mode_v1';
+const INTERACTION_MODE_KEY = 'gomomo_interaction_mode';
 
-/** Load the user's preferred interaction mode (null = not yet chosen). */
+/** Load the saved interaction mode, or null if never chosen. */
 export function loadInteractionMode(): InteractionMode | null {
   try {
-    const raw = localStorage.getItem(MODE_KEY);
+    const raw = localStorage.getItem(INTERACTION_MODE_KEY);
     if (raw === 'chat' || raw === 'speak') return raw;
     return null;
   } catch {
@@ -192,11 +197,11 @@ export function loadInteractionMode(): InteractionMode | null {
   }
 }
 
-/** Persist the user's interaction mode preference. */
+/** Persist the chosen interaction mode. */
 export function saveInteractionMode(mode: InteractionMode): void {
   try {
-    localStorage.setItem(MODE_KEY, mode);
+    localStorage.setItem(INTERACTION_MODE_KEY, mode);
   } catch {
-    // localStorage blocked — silently degrade
+    // localStorage full or blocked — silently degrade
   }
 }

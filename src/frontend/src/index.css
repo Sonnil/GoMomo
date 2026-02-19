@@ -746,12 +746,6 @@ html.embed #root {
   50% { opacity: 0.7; transform: scale(1.05); }
 }
 
-/* ── Thinking dots bounce animation ────────────────────── */
-@keyframes thinkBounce {
-  0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
-  40% { opacity: 1; transform: translateY(-4px); }
-}
-
 /* ── Chat widget message fade-in animation ─────────────── */
 @keyframes msg-fade-in {
   from { opacity: 0; transform: translateY(6px); }

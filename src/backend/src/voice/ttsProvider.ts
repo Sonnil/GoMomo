@@ -120,21 +120,13 @@ export function chunkText(text: string, maxLen = 4096): string[] {
 
 /**
  * Preprocess text for TTS: strip code blocks, collapse whitespace.
- * Returns empty string if the result contains only placeholder text
- * (i.e. the original was code-only with no speakable content).
  */
 export function preprocessForTTS(text: string): string {
   let processed = stripCodeBlocks(text);
   // Collapse multiple newlines / whitespace
   processed = processed.replace(/\n{2,}/g, '. ').replace(/\n/g, ' ');
   processed = processed.replace(/\s{2,}/g, ' ');
-  processed = processed.trim();
-
-  // If the result is ONLY placeholder(s), the original was code-only → nothing to speak
-  const withoutPlaceholders = processed.replace(/\(code example omitted\)/g, '').replace(/[.\s]+/g, '').trim();
-  if (!withoutPlaceholders) return '';
-
-  return processed;
+  return processed.trim();
 }
 
 // ── Provider ────────────────────────────────────────────────

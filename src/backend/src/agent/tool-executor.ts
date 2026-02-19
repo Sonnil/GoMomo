@@ -9,9 +9,23 @@ import { format } from 'date-fns';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
 import { daysFromNow } from '../services/clock.js';
 import { env } from '../config/env.js';
+import { randomUUID, createHash } from 'crypto';
 
 /** Maximum date-range span (in days) allowed for a single check_availability call. */
 const MAX_AVAILABILITY_RANGE_DAYS = 14;
+
+/**
+ * Mask an email for display in LLM context: keep first 2 chars of local part + "***@domain".
+ * Example: "jane@example.com" → "ja***@example.com"
+ */
+function maskEmail(email: string): string {
+  const at = email.indexOf('@');
+  if (at < 0) return '***';
+  const local = email.slice(0, at);
+  const domain = email.slice(at); // includes "@"
+  const visible = local.slice(0, 2);
+  return `${visible}***${domain}`;
+}
 
 type ToolResult = {
   success: boolean;
@@ -59,14 +73,63 @@ export async function executeToolCall(
         return { success: false, error: `Unknown tool: ${toolName}` };
     }
   } catch (error: any) {
-    if (error instanceof SlotConflictError || error instanceof BookingError) {
-      return { success: false, error: error.message };
+    // ── Structured error logging (safe for prod) ────────────
+    const correlationId = randomUUID().replace(/-/g, '').slice(0, 12);
+    const emailRaw: string = args?.client_email ?? '';
+    const emailHash = emailRaw
+      ? createHash('sha256').update(emailRaw.toLowerCase()).digest('hex').slice(0, 12)
+      : 'n/a';
+    const errorCode = classifyToolError(error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+
+    console.error(
+      `[tool-error] ref=${correlationId} tool=${toolName} tenant=${tenantId} ` +
+      `session=${sessionId} email_hash=${emailHash} code=${errorCode} msg=${errorMsg}`,
+    );
+
+    // ── Known domain errors → actionable user-facing messages ──
+    if (error instanceof BookingError) {
+      return { success: false, error: `BOOKING_ERROR: ${error.message}` };
     }
-    console.error(`Tool execution error (${toolName}):`, error);
-    return { success: false, error: 'An internal error occurred. Please try again.' };
+    if (error instanceof SlotConflictError) {
+      return {
+        success: false,
+        error: 'SLOT_CONFLICT: That time slot is no longer available — it was just booked by someone else. Please ask the customer to pick a different time, or call check_availability to see what\'s open.',
+      };
+    }
+    if (error instanceof CalendarReadError) {
+      return {
+        success: false,
+        error: 'CALENDAR_UNAVAILABLE: Unable to check the calendar right now. Please ask the customer to try again in a moment.',
+      };
+    }
+
+    // ── Unknown/system errors → generic message WITH reference id ──
+    return {
+      success: false,
+      error: `INTERNAL_ERROR: Something went wrong while processing this request. ` +
+        `Please ask the customer to try again. If the issue persists, reference ID: ${correlationId}`,
+    };
   }
 }
 
+/**
+ * Classify an error into a stable code for logging / metrics.
+ * Does NOT expose codes to the user — only used in structured logs.
+ */
+function classifyToolError(error: unknown): string {
+  if (error instanceof BookingError) return 'BOOKING_ERROR';
+  if (error instanceof SlotConflictError) return 'SLOT_CONFLICT';
+  if (error instanceof CalendarReadError) return 'CALENDAR_READ_ERROR';
+  if (error instanceof Error) {
+    const msg = error.message;
+    if (msg.includes('calendar') || msg.includes('Calendar')) return 'CALENDAR_WRITE_ERROR';
+    if (msg.includes('23P01')) return 'DB_EXCLUSION_CONFLICT';
+    if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) return 'TIMEOUT';
+    if (msg.includes('connect') || msg.includes('ECONNREFUSED')) return 'CONNECTION_ERROR';
+  }
+  return 'UNKNOWN';
+}
 async function handleCheckAvailability(
   tenantId: string,
   sessionId: string,
@@ -276,7 +339,7 @@ async function handleConfirmBooking(
     if (verifiedEmail && args.client_email.toLowerCase() !== verifiedEmail.toLowerCase()) {
       return {
         success: false,
-        error: `EMAIL_MISMATCH: The booking email (${args.client_email}) does not match the verified email (${verifiedEmail}). The customer must verify the new email before booking. Ask them to verify ${args.client_email} first.`,
+        error: `EMAIL_MISMATCH: The booking email (${maskEmail(args.client_email)}) does not match the verified email (${maskEmail(verifiedEmail)}). The customer must verify the new email before booking. Ask them to verify their new email first.`,
       };
     }
   }

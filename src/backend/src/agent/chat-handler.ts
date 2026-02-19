@@ -54,19 +54,12 @@ export interface ChatHandlerOptions {
   verifiedEmail?: string | null;
   /** Full customer identity from a verified session (email, phone, name). */
   customerIdentity?: CustomerIdentity | null;
-  /** Client timezone / locale metadata from the widget. */
-  clientMeta?: {
-    client_now_iso?: string;
-    client_tz?: string;
-    client_utc_offset_minutes?: number;
-    locale?: string;
-  };
+  /** Deterministically resolved date/time from the user's message (injected by FSM router). */
+  resolvedDatetime?: DatetimeResolverResult | null;
   /** Streaming: called for each text token as it arrives from OpenAI. */
   onToken?: (token: string) => void;
   /** Streaming: called when the agent starts executing a tool. */
   onStatus?: (phase: string, detail: string) => void;
-  /** Deterministic date/time resolved from the user message (booking intents only). */
-  resolvedDatetime?: DatetimeResolverResult | null;
 }
 
 export async function handleChatMessage(
@@ -91,7 +84,6 @@ export async function handleChatMessage(
         channel: options.channel,
         verifiedEmail: options.verifiedEmail,
         customerIdentity: options.customerIdentity,
-        clientMeta: options.clientMeta,
       }),
       timestamp: new Date().toISOString(),
     });
@@ -121,26 +113,21 @@ export async function handleChatMessage(
     timestamp: new Date().toISOString(),
   });
 
-  // 3a. Inject deterministic datetime context for booking intents
-  //     When the datetime-resolver produced a result, inject it as a
-  //     system message so the LLM has the absolute ISO timestamp and
-  //     does NOT need to guess what "today at 3pm" means.
+  // 3a. Inject deterministically-resolved date/time context
+  //     The FSM router resolves phrases like "today at 3pm" to absolute ISO
+  //     timestamps before the LLM sees them. Inject as a system hint so the
+  //     LLM uses exact timestamps in tool calls (no hallucinated dates).
   if (options.resolvedDatetime) {
     const rd = options.resolvedDatetime;
-    const parts = [
-      `RESOLVED_DATETIME_ISO=${rd.start_iso}`,
-      rd.end_iso ? `RESOLVED_DATETIME_END_ISO=${rd.end_iso}` : null,
-      `CONFIDENCE=${rd.confidence}`,
-      `RESOLUTION_DETAILS: ${rd.reasons.join(', ')}`,
-    ].filter(Boolean).join(' | ');
-
     conversation.push({
       role: 'system',
       content:
-        `[DATETIME RESOLUTION] The user's date/time expression has been ` +
-        `deterministically resolved. Use the following absolute timestamp ` +
-        `when calling check_availability or confirm_booking tools. ` +
-        `Do NOT reinterpret the user's relative time expression.\n${parts}`,
+        `RESOLVED DATE/TIME: The user mentioned a date/time. ` +
+        `Resolved to: start=${rd.start_iso}` +
+        `${rd.end_iso ? `, end=${rd.end_iso}` : ''}` +
+        ` (confidence: ${rd.confidence}). ` +
+        `Use these exact ISO timestamps when calling check_availability or hold_slot. ` +
+        `Do NOT re-ask the customer for the date/time.`,
       timestamp: new Date().toISOString(),
     });
   }

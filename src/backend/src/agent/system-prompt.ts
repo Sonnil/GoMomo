@@ -16,13 +16,6 @@ export interface SystemPromptOptions {
   verifiedEmail?: string | null;
   /** Full customer identity from a verified session (email, phone, name). */
   customerIdentity?: CustomerIdentity | null;
-  /** Client timezone / locale metadata from the widget. */
-  clientMeta?: {
-    client_now_iso?: string;
-    client_tz?: string;
-    client_utc_offset_minutes?: number;
-    locale?: string;
-  };
 }
 
 export function buildSystemPrompt(
@@ -89,22 +82,7 @@ You may schedule at most ${followupMax} follow-up contacts (SMS or email) per co
   // ── Current date/time context for the LLM ─────────────────
   // Without this, the model guesses dates from its training cutoff and
   // misinterprets relative expressions like "tomorrow" or "Monday Feb 9th".
-  //
-  // Prefer the client's timezone (from the widget) when available and valid,
-  // so relative terms like "today", "tomorrow", "3 PM" resolve correctly
-  // from the *customer's* perspective, not the server or tenant timezone.
-  const clientTz = options.clientMeta?.client_tz;
-  let effectiveTz = tenant.timezone;
-  if (clientTz) {
-    try {
-      // Validate IANA timezone by attempting to use it
-      Intl.DateTimeFormat(undefined, { timeZone: clientTz });
-      effectiveTz = clientTz;
-    } catch {
-      // Invalid timezone string — fall back to tenant timezone
-    }
-  }
-  const tz = effectiveTz;
+  const tz = tenant.timezone;
   const nowZoned = getNow(tz);
   const todayISO = getTodayISO(tz);
   const dayOfWeek = format(nowZoned, 'EEEE');
@@ -197,7 +175,22 @@ CRITICAL RULES — YOU MUST FOLLOW THESE:`;
 1. NEVER tell the user a time is available without calling check_availability first
 2. NEVER confirm a booking without calling confirm_booking first and receiving a success response
 3. NEVER fabricate appointment reference codes, times, or confirmation details
-4. If a tool call fails, inform the user honestly and suggest alternatives
+4. When a tool call fails, use the ERROR CODE prefix to decide your response:
+   - BOOKING_ERROR: Relay the specific message to the customer (e.g. "Hold has expired" → tell them the reservation timed out and offer to rebook)
+   - SLOT_CONFLICT: The time slot was just booked by someone else — apologise and call check_availability to offer alternative times
+   - CALENDAR_UNAVAILABLE: The calendar could not be read right now — ask the customer to try again in a moment
+   - PHONE_REQUIRED / INVALID_PHONE: Ask the customer for a valid phone number before proceeding
+   - EMAIL_VERIFICATION_REQUIRED / EMAIL_MISMATCH: Guide the customer through email verification
+   - RISK_REVERIFY: The session needs re-verification — prompt the customer to verify again
+   - RISK_COOLDOWN: The customer is in a cooldown period — inform them politely when they can try again, using the cooldown details provided
+   - CONFIRMATION_REQUIRED: An existing booking overlaps — present the conflict details and ask the customer to explicitly confirm they want to proceed
+   - FAR_DATE_CONFIRMATION_REQUIRED: The requested date is far in the future — confirm the customer really means that date before holding the slot
+   - CANCELLATION_NEEDS_IDENTITY: Ask the customer for their email or booking reference code so we can locate the booking
+   - CANCELLATION_REQUIRES_VERIFICATION: Ask the customer to verify their identity (e.g. provide their name or email) before we can cancel
+   - CANCELLATION_FAILED: Relay the specific cancellation failure reason to the customer
+   - INTERNAL_ERROR: Apologise briefly, say you hit a technical issue, and share the reference ID so the business can investigate. Never expose raw technical details
+   - SERVICE_REQUIRED / DATE_RANGE_TOO_WIDE: Relay the specific guidance from the error message
+   NEVER say "a technical issue occurred" for errors that have a specific, actionable code. Only use that phrasing for INTERNAL_ERROR
 5. Always use the tools provided — do not make up data
 6. Only say "confirmed" or "booked" AFTER confirm_booking returns success — never before
 7. Only offer specific times that appear in get_availability / check_availability output — never invent slots
